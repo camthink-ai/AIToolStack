@@ -1,0 +1,121 @@
+.annotation-canvas-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  cursor: crosshair;
+}
+
+.annotation-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.annotation-canvas-container.panning {
+  cursor: grab;
+}
+
+.annotation-canvas-container.panning:active {
+  cursor: grabbing;
+}
+
+.image-loading-overlay,
+.image-error-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.95);
+  z-index: 10;
+}
+
+.loading-spinner {
+  color: var(--primary-color);
+  font-size: 16px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.error-message {
+  text-align: center;
+  color: var(--error-color);
+  padding: 20px;
+  background: var(--bg-primary);
+  border: 1px solid var(--error-color);
+  border-radius: 8px;
+  max-width: 500px;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-color);
+}
+
+.error-icon svg {
+  width: 48px;
+  height: 48px;
+}
+
+.error-message div {
+  margin-bottom: 15px;
+  word-break: break-all;
+  font-size: 14px;
+}
+
+.retry-button {
+  padding: 8px 16px;
+  background: var(--primary-color);
+  border: none;
+  border-radius: 4px;
+  color: var(--text-white);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.retry-button:hover {
+  background: var(--primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(10, 13, 22, 0.3);
+}
+
+/* 绘制状态提示 */
+.drawing-hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text-primary);
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  z-index: 100;
+  pointer-events: none;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.drawing-hint strong {
+  color: var(--primary-color);
+}
+
