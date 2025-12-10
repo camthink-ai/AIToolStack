@@ -65,6 +65,32 @@ class TrainingRequest(BaseModel):
     imgsz: int = 640
     batch: int = 16
     device: Optional[str] = None
+    # 学习率相关
+    lr0: Optional[float] = None  # 初始学习率
+    lrf: Optional[float] = None  # 最终学习率
+    # 优化器相关
+    optimizer: Optional[str] = None  # 'SGD', 'Adam', 'AdamW', 'RMSProp', 'auto'
+    momentum: Optional[float] = None  # 动量
+    weight_decay: Optional[float] = None  # 权重衰减
+    # 训练控制
+    patience: Optional[int] = None  # 早停耐心值
+    workers: Optional[int] = None  # 数据加载线程数
+    val: Optional[bool] = None  # 是否进行验证
+    save_period: Optional[int] = None  # 保存周期（-1表示不保存中间模型）
+    amp: Optional[bool] = None  # 是否使用混合精度训练
+    # 数据增强（高级选项）
+    hsv_h: Optional[float] = None  # HSV色调增强
+    hsv_s: Optional[float] = None  # HSV饱和度增强
+    hsv_v: Optional[float] = None  # HSV明度增强
+    degrees: Optional[float] = None  # 旋转角度
+    translate: Optional[float] = None  # 平移
+    scale: Optional[float] = None  # 缩放
+    shear: Optional[float] = None  # 剪切
+    perspective: Optional[float] = None  # 透视变换
+    flipud: Optional[float] = None  # 上下翻转概率
+    fliplr: Optional[float] = None  # 左右翻转概率
+    mosaic: Optional[float] = None  # Mosaic增强概率
+    mixup: Optional[float] = None  # Mixup增强概率
     
     class Config:
         protected_namespaces = ()  # 解决 model_size 字段警告
@@ -806,7 +832,29 @@ def start_training(project_id: str, request: TrainingRequest, db: Session = Depe
             epochs=request.epochs,
             imgsz=request.imgsz,
             batch=request.batch,
-            device=request.device
+            device=request.device,
+            lr0=request.lr0,
+            lrf=request.lrf,
+            optimizer=request.optimizer,
+            momentum=request.momentum,
+            weight_decay=request.weight_decay,
+            patience=request.patience,
+            workers=request.workers,
+            val=request.val,
+            save_period=request.save_period,
+            amp=request.amp,
+            hsv_h=request.hsv_h,
+            hsv_s=request.hsv_s,
+            hsv_v=request.hsv_v,
+            degrees=request.degrees,
+            translate=request.translate,
+            scale=request.scale,
+            shear=request.shear,
+            perspective=request.perspective,
+            flipud=request.flipud,
+            fliplr=request.fliplr,
+            mosaic=request.mosaic,
+            mixup=request.mixup,
         )
         return training_info
     except ValueError as e:

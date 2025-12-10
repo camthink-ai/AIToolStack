@@ -216,7 +216,29 @@ class TrainingService:
         epochs: int = 100,
         imgsz: int = 640,
         batch: int = 16,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        lr0: Optional[float] = None,
+        lrf: Optional[float] = None,
+        optimizer: Optional[str] = None,
+        momentum: Optional[float] = None,
+        weight_decay: Optional[float] = None,
+        patience: Optional[int] = None,
+        workers: Optional[int] = None,
+        val: Optional[bool] = None,
+        save_period: Optional[int] = None,
+        amp: Optional[bool] = None,
+        hsv_h: Optional[float] = None,
+        hsv_s: Optional[float] = None,
+        hsv_v: Optional[float] = None,
+        degrees: Optional[float] = None,
+        translate: Optional[float] = None,
+        scale: Optional[float] = None,
+        shear: Optional[float] = None,
+        perspective: Optional[float] = None,
+        flipud: Optional[float] = None,
+        fliplr: Optional[float] = None,
+        mosaic: Optional[float] = None,
+        mixup: Optional[float] = None,
     ) -> Dict:
         """
         启动训练任务
@@ -276,7 +298,9 @@ class TrainingService:
             # 在后台线程中启动训练
             thread = threading.Thread(
                 target=self._run_training,
-                args=(training_id, project_id, dataset_path, training_info, model_size, epochs, imgsz, batch, device),
+                args=(training_id, project_id, dataset_path, training_info, model_size, epochs, imgsz, batch, device,
+                      lr0, lrf, optimizer, momentum, weight_decay, patience, workers, val, save_period, amp,
+                      hsv_h, hsv_s, hsv_v, degrees, translate, scale, shear, perspective, flipud, fliplr, mosaic, mixup),
                 daemon=True
             )
             thread.start()
@@ -293,7 +317,29 @@ class TrainingService:
         epochs: int,
         imgsz: int,
         batch: int,
-        device: Optional[str]
+        device: Optional[str],
+        lr0: Optional[float] = None,
+        lrf: Optional[float] = None,
+        optimizer: Optional[str] = None,
+        momentum: Optional[float] = None,
+        weight_decay: Optional[float] = None,
+        patience: Optional[int] = None,
+        workers: Optional[int] = None,
+        val: Optional[bool] = None,
+        save_period: Optional[int] = None,
+        amp: Optional[bool] = None,
+        hsv_h: Optional[float] = None,
+        hsv_s: Optional[float] = None,
+        hsv_v: Optional[float] = None,
+        degrees: Optional[float] = None,
+        translate: Optional[float] = None,
+        scale: Optional[float] = None,
+        shear: Optional[float] = None,
+        perspective: Optional[float] = None,
+        flipud: Optional[float] = None,
+        fliplr: Optional[float] = None,
+        mosaic: Optional[float] = None,
+        mixup: Optional[float] = None,
     ):
         """在后台线程中运行训练"""
         try:
@@ -374,21 +420,47 @@ class TrainingService:
                     'name': f'train_{project_id}',
                     'exist_ok': True,
                 }
-                # 记录默认数据增强配置（使用 ultralytics 默认增强，不另做自定义）
+                
+                # 添加可选参数（如果提供）
+                if lr0 is not None:
+                    train_args['lr0'] = lr0
+                if lrf is not None:
+                    train_args['lrf'] = lrf
+                if optimizer is not None:
+                    train_args['optimizer'] = optimizer
+                if momentum is not None:
+                    train_args['momentum'] = momentum
+                if weight_decay is not None:
+                    train_args['weight_decay'] = weight_decay
+                if patience is not None:
+                    train_args['patience'] = patience
+                if workers is not None:
+                    train_args['workers'] = workers
+                if val is not None:
+                    train_args['val'] = val
+                if save_period is not None:
+                    train_args['save_period'] = save_period
+                if amp is not None:
+                    train_args['amp'] = amp
+                
+                # 数据增强参数（如果提供，否则使用默认值）
                 augment_info = {
-                    "hsv_h": 0.015,
-                    "hsv_s": 0.7,
-                    "hsv_v": 0.4,
-                    "degrees": 0.0,
-                    "translate": 0.1,
-                    "scale": 0.5,
-                    "shear": 0.0,
-                    "flipud": 0.0,
-                    "fliplr": 0.5,
-                    "mosaic": 1.0,
-                    "mixup": 0.0,
-                    "copy_paste": 0.0,
+                    "hsv_h": hsv_h if hsv_h is not None else 0.015,
+                    "hsv_s": hsv_s if hsv_s is not None else 0.7,
+                    "hsv_v": hsv_v if hsv_v is not None else 0.4,
+                    "degrees": degrees if degrees is not None else 0.0,
+                    "translate": translate if translate is not None else 0.1,
+                    "scale": scale if scale is not None else 0.5,
+                    "shear": shear if shear is not None else 0.0,
+                    "perspective": perspective if perspective is not None else 0.0,
+                    "flipud": flipud if flipud is not None else 0.0,
+                    "fliplr": fliplr if fliplr is not None else 0.5,
+                    "mosaic": mosaic if mosaic is not None else 1.0,
+                    "mixup": mixup if mixup is not None else 0.0,
                 }
+                
+                # 将数据增强参数添加到训练参数中
+                train_args.update(augment_info)
                 
                 self._add_log(training_id, project_id, "=" * 60)
                 self._add_log(training_id, project_id, "开始训练")

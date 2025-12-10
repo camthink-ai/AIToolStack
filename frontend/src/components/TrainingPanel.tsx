@@ -43,6 +43,32 @@ interface TrainingRequest {
   imgsz: number;
   batch: number;
   device?: string;
+  // 学习率相关
+  lr0?: number;
+  lrf?: number;
+  // 优化器相关
+  optimizer?: string;
+  momentum?: number;
+  weight_decay?: number;
+  // 训练控制
+  patience?: number;
+  workers?: number;
+  val?: boolean;
+  save_period?: number;
+  amp?: boolean;
+  // 数据增强（高级选项）
+  hsv_h?: number;
+  hsv_s?: number;
+  hsv_v?: number;
+  degrees?: number;
+  translate?: number;
+  scale?: number;
+  shear?: number;
+  perspective?: number;
+  flipud?: number;
+  fliplr?: number;
+  mosaic?: number;
+  mixup?: number;
 }
 
 export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose }) => {
@@ -69,8 +95,35 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
     epochs: 100,
     imgsz: 640,
     batch: 16,
-    device: undefined
+    device: undefined,
+    // 学习率相关
+    lr0: undefined,
+    lrf: undefined,
+    // 优化器相关
+    optimizer: undefined,
+    momentum: undefined,
+    weight_decay: undefined,
+    // 训练控制
+    patience: undefined,
+    workers: undefined,
+    val: undefined,
+    save_period: undefined,
+    amp: undefined,
+    // 数据增强（高级选项）
+    hsv_h: undefined,
+    hsv_s: undefined,
+    hsv_v: undefined,
+    degrees: undefined,
+    translate: undefined,
+    scale: undefined,
+    shear: undefined,
+    perspective: undefined,
+    flipud: undefined,
+    fliplr: undefined,
+    mosaic: undefined,
+    mixup: undefined,
   });
+  const [showAdvanced, setShowAdvanced] = useState(false);
   
   const logsEndRef = useRef<HTMLDivElement>(null);
   const recordsIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -455,6 +508,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                       </div>
                       <div className="record-info">
                         <span>模型: yolov8{record.model_size}</span>
+                        {record.status === 'completed' && record.metrics && record.metrics.mAP50 !== undefined && (
+                          <span className="record-metric">
+                            mAP50: {(record.metrics.mAP50 * 100).toFixed(1)}%
+                          </span>
+                        )}
                       </div>
                       {selectedTrainingId === record.training_id && (
                         <button
@@ -571,6 +629,45 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     {isCompleted && currentStatus.model_path && (
                       <div className="model-path">
                         <strong>模型路径:</strong> {currentStatus.model_path}
+                      </div>
+                    )}
+
+                    {/* 训练性能指标 */}
+                    {isCompleted && currentStatus.metrics && (
+                      <div className="training-metrics">
+                        <h4 className="metrics-title">最终验证性能指标</h4>
+                        <div className="metrics-grid">
+                          {currentStatus.metrics.mAP50 !== undefined && (
+                            <div className="metric-item">
+                              <span className="metric-label">mAP50:</span>
+                              <span className="metric-value">{(currentStatus.metrics.mAP50 * 100).toFixed(2)}%</span>
+                            </div>
+                          )}
+                          {currentStatus.metrics['mAP50-95'] !== undefined && (
+                            <div className="metric-item">
+                              <span className="metric-label">mAP50-95:</span>
+                              <span className="metric-value">{(currentStatus.metrics['mAP50-95'] * 100).toFixed(2)}%</span>
+                            </div>
+                          )}
+                          {currentStatus.metrics.precision !== undefined && (
+                            <div className="metric-item">
+                              <span className="metric-label">精确率 (Precision):</span>
+                              <span className="metric-value">{(currentStatus.metrics.precision * 100).toFixed(2)}%</span>
+                            </div>
+                          )}
+                          {currentStatus.metrics.recall !== undefined && (
+                            <div className="metric-item">
+                              <span className="metric-label">召回率 (Recall):</span>
+                              <span className="metric-value">{(currentStatus.metrics.recall * 100).toFixed(2)}%</span>
+                            </div>
+                          )}
+                          {currentStatus.metrics.best_fitness !== undefined && (
+                            <div className="metric-item">
+                              <span className="metric-label">最佳适应度 (Fitness):</span>
+                              <span className="metric-value">{currentStatus.metrics.best_fitness.toFixed(4)}</span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -733,6 +830,397 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     disabled={isLoading}
                   />
                 </div>
+
+                {/* 学习率参数 */}
+                <div className="config-section-divider">
+                  <span>学习率参数</span>
+                </div>
+
+                <div className="config-item">
+                  <label>初始学习率 (lr0)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0.0001"
+                    max="1"
+                    placeholder="留空使用默认值"
+                    value={trainingConfig.lr0 ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setTrainingConfig({ ...trainingConfig, lr0: value === '' ? undefined : parseFloat(value) });
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="config-item">
+                  <label>最终学习率 (lrf)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0.0001"
+                    max="1"
+                    placeholder="留空使用默认值"
+                    value={trainingConfig.lrf ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setTrainingConfig({ ...trainingConfig, lrf: value === '' ? undefined : parseFloat(value) });
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                {/* 优化器参数 */}
+                <div className="config-section-divider">
+                  <span>优化器参数</span>
+                </div>
+
+                <div className="config-item">
+                  <label>优化器 (Optimizer)</label>
+                  <select
+                    value={trainingConfig.optimizer || ''}
+                    onChange={(e) => setTrainingConfig({ ...trainingConfig, optimizer: e.target.value || undefined })}
+                    disabled={isLoading}
+                  >
+                    <option value="">使用默认 (auto)</option>
+                    <option value="SGD">SGD</option>
+                    <option value="Adam">Adam</option>
+                    <option value="AdamW">AdamW</option>
+                    <option value="RMSProp">RMSProp</option>
+                  </select>
+                </div>
+
+                <div className="config-item">
+                  <label>动量 (Momentum)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    placeholder="留空使用默认值"
+                    value={trainingConfig.momentum ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setTrainingConfig({ ...trainingConfig, momentum: value === '' ? undefined : parseFloat(value) });
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="config-item">
+                  <label>权重衰减 (Weight Decay)</label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    max="0.01"
+                    placeholder="留空使用默认值"
+                    value={trainingConfig.weight_decay ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setTrainingConfig({ ...trainingConfig, weight_decay: value === '' ? undefined : parseFloat(value) });
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                {/* 训练控制参数 */}
+                <div className="config-section-divider">
+                  <span>训练控制</span>
+                </div>
+
+                <div className="config-item">
+                  <label>早停耐心值 (Patience)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    placeholder="留空使用默认值 (100)"
+                    value={trainingConfig.patience ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setTrainingConfig({ ...trainingConfig, patience: value === '' ? undefined : parseInt(value, 10) });
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="config-item">
+                  <label>数据加载线程数 (Workers)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="16"
+                    placeholder="留空使用默认值"
+                    value={trainingConfig.workers ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setTrainingConfig({ ...trainingConfig, workers: value === '' ? undefined : parseInt(value, 10) });
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                <div className="config-item checkbox-row">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={trainingConfig.val !== false}
+                      onChange={(e) => setTrainingConfig({ ...trainingConfig, val: e.target.checked || undefined })}
+                      disabled={isLoading}
+                    />
+                    <span>进行验证 (Validation)</span>
+                  </label>
+                </div>
+
+                <div className="config-item checkbox-row">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={trainingConfig.amp !== false}
+                      onChange={(e) => setTrainingConfig({ ...trainingConfig, amp: e.target.checked || undefined })}
+                      disabled={isLoading}
+                    />
+                    <span>混合精度训练 (AMP)</span>
+                  </label>
+                </div>
+
+                <div className="config-item">
+                  <label>保存周期 (Save Period)</label>
+                  <input
+                    type="number"
+                    min="-1"
+                    max="100"
+                    placeholder="留空使用默认值 (-1=不保存中间模型)"
+                    value={trainingConfig.save_period ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setTrainingConfig({ ...trainingConfig, save_period: value === '' ? undefined : parseInt(value, 10) });
+                    }}
+                    disabled={isLoading}
+                  />
+                </div>
+
+                {/* 高级选项 - 数据增强 */}
+                <div className="config-section-divider">
+                  <button
+                    type="button"
+                    className="advanced-toggle"
+                    onClick={() => setShowAdvanced(!showAdvanced)}
+                    disabled={isLoading}
+                  >
+                    <span>{showAdvanced ? '▼' : '▶'}</span>
+                    <span>高级选项 - 数据增强</span>
+                  </button>
+                </div>
+
+                {showAdvanced && (
+                  <>
+                    <div className="config-item">
+                      <label>HSV 色调增强 (hsv_h)</label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        max="0.1"
+                        placeholder="默认: 0.015"
+                        value={trainingConfig.hsv_h ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, hsv_h: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>HSV 饱和度增强 (hsv_s)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        placeholder="默认: 0.7"
+                        value={trainingConfig.hsv_s ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, hsv_s: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>HSV 明度增强 (hsv_v)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        placeholder="默认: 0.4"
+                        value={trainingConfig.hsv_v ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, hsv_v: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>旋转角度 (degrees)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="45"
+                        placeholder="默认: 0.0"
+                        value={trainingConfig.degrees ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, degrees: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>平移 (translate)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="0.5"
+                        placeholder="默认: 0.1"
+                        value={trainingConfig.translate ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, translate: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>缩放 (scale)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        placeholder="默认: 0.5"
+                        value={trainingConfig.scale ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, scale: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>剪切 (shear)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="10"
+                        placeholder="默认: 0.0"
+                        value={trainingConfig.shear ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, shear: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>透视变换 (perspective)</label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        max="0.01"
+                        placeholder="默认: 0.0"
+                        value={trainingConfig.perspective ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, perspective: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>上下翻转概率 (flipud)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        placeholder="默认: 0.0"
+                        value={trainingConfig.flipud ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, flipud: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>左右翻转概率 (fliplr)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        placeholder="默认: 0.5"
+                        value={trainingConfig.fliplr ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, fliplr: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>Mosaic 增强概率 (mosaic)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        placeholder="默认: 1.0"
+                        value={trainingConfig.mosaic ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, mosaic: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+
+                    <div className="config-item">
+                      <label>Mixup 增强概率 (mixup)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        placeholder="默认: 0.0"
+                        value={trainingConfig.mixup ?? ''}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setTrainingConfig({ ...trainingConfig, mixup: value === '' ? undefined : parseFloat(value) });
+                        }}
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="config-modal-actions">
