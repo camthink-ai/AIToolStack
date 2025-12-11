@@ -48,6 +48,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const [newClassColor, setNewClassColor] = useState('#4a9eff');
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    current: number;
+    total: number;
+    currentFileName: string;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 生成随机颜色（100种颜色）
@@ -132,23 +137,54 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    const file = files[0];
+    const fileArray = Array.from(files);
     
-    // 验证文件类型
+    // 验证所有文件
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/bmp', 'image/gif', 'image/webp'];
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    
+    const invalidFiles: string[] = [];
+    const validFiles: File[] = [];
+    
+    fileArray.forEach(file => {
     if (!allowedTypes.includes(file.type)) {
-      alert('不支持的文件格式。请选择 JPG、PNG、BMP、GIF 或 WEBP 格式的图像。');
-      return;
+        invalidFiles.push(`${file.name}（格式不支持）`);
+      } else if (file.size > maxSize) {
+        invalidFiles.push(`${file.name}（超过 ${maxSize / 1024 / 1024}MB）`);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    // 显示无效文件提示
+    if (invalidFiles.length > 0) {
+      alert(`以下文件无法上传：\n${invalidFiles.join('\n')}\n\n将跳过这些文件，继续上传其他有效文件。`);
     }
 
-    // 验证文件大小（10MB）
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
-      alert(`文件太大。最大支持 ${maxSize / 1024 / 1024}MB。`);
+    if (validFiles.length === 0) {
+      // 清空文件输入
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       return;
     }
 
     setIsUploading(true);
+    setUploadProgress({ current: 0, total: validFiles.length, currentFileName: '' });
+
+    let successCount = 0;
+    let failCount = 0;
+    const errors: string[] = [];
+
+    // 逐个上传文件
+    for (let i = 0; i < validFiles.length; i++) {
+      const file = validFiles[i];
+      setUploadProgress({
+        current: i + 1,
+        total: validFiles.length,
+        currentFileName: file.name
+      });
+
     const formData = new FormData();
     formData.append('file', file);
 
@@ -159,23 +195,42 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       });
 
       if (response.ok) {
-        const result = await response.json();
-        if (onImageUpload) {
-          onImageUpload();
+          successCount++;
+        } else {
+          failCount++;
+          const errorData = await response.json().catch(() => ({ detail: '上传失败' }));
+          errors.push(`${file.name}: ${errorData.detail || '上传失败'}`);
         }
+      } catch (error) {
+        failCount++;
+        errors.push(`${file.name}: 无法连接到服务器`);
+        console.error(`Failed to upload ${file.name}:`, error);
+        }
+    }
+
         // 清空文件输入，允许重复上传同一文件
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
         }
-      } else {
-        const errorData = await response.json().catch(() => ({ detail: '上传失败' }));
-        alert(errorData.detail || '图像上传失败');
+
+    // 刷新图片列表
+    if (successCount > 0 && onImageUpload) {
+      onImageUpload();
       }
-    } catch (error) {
-      console.error('Failed to upload image:', error);
-      alert('上传失败：无法连接到服务器');
-    } finally {
+
+    // 显示上传结果
+    setUploadProgress(null);
       setIsUploading(false);
+
+    if (successCount > 0 && failCount === 0) {
+      // 全部成功
+      alert(`成功上传 ${successCount} 张图片`);
+    } else if (successCount > 0 && failCount > 0) {
+      // 部分成功
+      alert(`上传完成：成功 ${successCount} 张，失败 ${failCount} 张\n\n失败详情：\n${errors.join('\n')}`);
+    } else {
+      // 全部失败
+      alert(`上传失败（${failCount} 张）：\n${errors.join('\n')}`);
     }
   };
 
@@ -363,14 +418,27 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div className="panel-right-column">
           <div className="file-navigator">
             <div className="file-header">
+              <div style={{ flex: 1 }}>
               <h3>图像列表 ({images.length})</h3>
+                {uploadProgress && (
+                  <div className="upload-progress-info">
+                    正在上传: {uploadProgress.currentFileName} ({uploadProgress.current}/{uploadProgress.total})
+                  </div>
+                )}
+              </div>
               <button
                 onClick={handleUploadClick}
                 disabled={isUploading}
                 className="btn-upload"
-                title="上传图像"
+                title="上传图像（支持批量选择）"
               >
-                {isUploading ? '上传中...' : '上传图片'}
+                {isUploading && uploadProgress ? (
+                  `上传中 (${uploadProgress.current}/${uploadProgress.total})...`
+                ) : isUploading ? (
+                  '上传中...'
+                ) : (
+                  '上传图片'
+                )}
               </button>
               <input
                 ref={fileInputRef}
@@ -378,7 +446,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 accept="image/jpeg,image/jpg,image/png,image/bmp,image/gif,image/webp"
                 onChange={handleFileSelect}
                 style={{ display: 'none' }}
-                multiple={false}
+                multiple={true}
               />
             </div>
             <div className="file-list">

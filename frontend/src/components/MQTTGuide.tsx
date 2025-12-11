@@ -21,6 +21,8 @@ interface MQTTStatus {
   broker?: string;
   port?: number;
   topic?: string;
+  server_ip?: string;  // 服务器 IP 地址
+  server_port?: number;  // 服务器端口
 }
 
 interface TestResult {
@@ -157,6 +159,28 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
                 )}
                 <h4>项目信息</h4>
                 <div className="info-item">
+                  <span className="info-label">服务器地址:</span>
+                  <div className="info-value-group">
+                    <code className="info-value">
+                      {mqttStatus?.server_ip || mqttStatus?.broker || '正在获取...'}
+                      {mqttStatus?.server_port ? `:${mqttStatus.server_port}` : (mqttStatus?.port ? `:${mqttStatus.port}` : ':8000')}
+                    </code>
+                    {(mqttStatus?.server_ip || mqttStatus?.broker) && (
+                      <button
+                        className="btn-copy"
+                        onClick={() => copyToClipboard(
+                          `${mqttStatus?.server_ip || mqttStatus?.broker || ''}${mqttStatus?.server_port ? `:${mqttStatus.server_port}` : (mqttStatus?.port ? `:${mqttStatus.port}` : ':8000')}`,
+                          'serverIp'
+                        )}
+                        title="复制"
+                      >
+                        <Icon component={IoCopyOutline} />
+                        {copied === 'serverIp' && <span className="copied-tooltip">已复制</span>}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="info-item">
                   <span className="info-label">项目 ID:</span>
                   <div className="info-value-group">
                     <code className="info-value">{projectId}</code>
@@ -289,7 +313,7 @@ mosquitto_pub -h localhost -t test -m "Hello MQTT"`}</code></pre>
               <div className="mqtt-usage-section">
                 <h4>使用说明</h4>
                 <ol className="usage-steps">
-                  <li>连接到 MQTT Broker: <code>{mqttStatus?.broker || 'localhost'}:{mqttStatus?.port || 1883}</code></li>
+                              <li>连接到 MQTT Broker: <code>{mqttStatus?.broker || mqttStatus?.server_ip || 'localhost'}:{mqttStatus?.port || 1883}</code></li>
                   <li>发布消息到 Topic: <code>{mqttTopic}</code></li>
                   <li>消息格式为 JSON，包含图像数据（Base64 编码）</li>
                   <li>服务器会自动保存图像到当前项目</li>

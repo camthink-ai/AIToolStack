@@ -90,6 +90,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   const [quantNe301, setQuantNe301] = useState(true);
   const [quantResult, setQuantResult] = useState<any>(null);
   const [isQuanting, setIsQuanting] = useState(false);
+  const [quantProgress, setQuantProgress] = useState<string>('');
+  const [quantStartTime, setQuantStartTime] = useState<number | null>(null);
+  const [quantElapsedTime, setQuantElapsedTime] = useState<number>(0);
+  const quantTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const quantTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [trainingConfig, setTrainingConfig] = useState<TrainingRequest>({
     model_size: 'n',
     epochs: 100,
@@ -249,6 +254,47 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
     };
   }, [projectId, selectedTrainingId]);
 
+  // 清理量化定时器
+  useEffect(() => {
+    return () => {
+      if (quantTimeoutRef.current) {
+        clearTimeout(quantTimeoutRef.current);
+        quantTimeoutRef.current = null;
+      }
+      if (quantTimerRef.current) {
+        clearInterval(quantTimerRef.current);
+        quantTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // 实时更新量化已用时间
+  useEffect(() => {
+    if (isQuanting && quantStartTime) {
+      // 立即更新一次
+      setQuantElapsedTime(Math.floor((Date.now() - quantStartTime) / 1000));
+      
+      // 每秒更新一次
+      quantTimerRef.current = setInterval(() => {
+        setQuantElapsedTime(Math.floor((Date.now() - quantStartTime) / 1000));
+      }, 1000);
+      
+      return () => {
+        if (quantTimerRef.current) {
+          clearInterval(quantTimerRef.current);
+          quantTimerRef.current = null;
+        }
+      };
+    } else {
+      // 量化停止时，清除定时器
+      if (quantTimerRef.current) {
+        clearInterval(quantTimerRef.current);
+        quantTimerRef.current = null;
+      }
+      // 保持最终的时间，不要重置
+    }
+  }, [isQuanting, quantStartTime]);
+
   // 自动滚动到底部
   useEffect(() => {
     if (logsEndRef.current) {
@@ -401,6 +447,53 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
     setQuantResult(null);
   };
 
+  const handleDownloadExportFile = async (fileType: string) => {
+    if (!selectedTrainingId) return;
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/projects/${projectId}/train/${selectedTrainingId}/export/tflite/download?file_type=${fileType}`
+      );
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: '下载失败' }));
+        throw new Error(error.detail || '下载失败');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // 从响应头获取文件名，或使用默认名称
+      const contentDisposition = response.headers.get('content-disposition');
+      let filename = `${fileType}_${selectedTrainingId}`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      } else {
+        // 根据文件类型设置默认扩展名
+        const extensions: { [key: string]: string } = {
+          'tflite': '.tflite',
+          'ne301_tflite': '.tflite',
+          'ne301_json': '.json',
+          'ne301_model_bin': '.bin'
+        };
+        filename += extensions[fileType] || '';
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error: any) {
+      alert(`下载失败: ${error.message}`);
+    }
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -540,17 +633,17 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                 {/* 训练状态 */}
                 <div className="training-status-section">
                   <div className="status-header">
-                    <h3>训练状态</h3>
+                    <h3>训练信息</h3>
                     {isCompleted && currentStatus.model_path && (
                       <div>
                         <button className="btn-export-model" onClick={handleExportModel}>
-                          <IoDownload /> 导出模型
+                          <IoDownload /> 导出模型(pt)
                         </button>
-                        <button className="btn-test-model" onClick={handleTestModel}>
+                        <button className="btn-export-model" onClick={handleTestModel}>
                           <IoImage /> 测试模型
                         </button>
-                      <button className="btn-quant-model" onClick={handleQuantModel}>
-                        <IoDownload /> 量化(TFLite)
+                      <button className="btn-export-model" onClick={handleQuantModel}>
+                        <IoDownload /> 量化(TFLite&CamThink NE301)
                       </button>
                       </div>
                     )}
@@ -661,12 +754,12 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                               <span className="metric-value">{(currentStatus.metrics.recall * 100).toFixed(2)}%</span>
                             </div>
                           )}
-                          {currentStatus.metrics.best_fitness !== undefined && (
+                          {/* {currentStatus.metrics.best_fitness !== undefined && (
                             <div className="metric-item">
                               <span className="metric-label">最佳适应度 (Fitness):</span>
                               <span className="metric-value">{currentStatus.metrics.best_fitness.toFixed(4)}</span>
                             </div>
-                          )}
+                          )} */}
                         </div>
                       </div>
                     )}
@@ -1371,113 +1464,317 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
         {/* 量化导出弹窗 */}
         {showQuantModal && (
-          <div className="config-modal-overlay" onClick={() => !isQuanting && setShowQuantModal(false)}>
+          <div className="config-modal-overlay" onClick={() => {
+            if (isQuanting) {
+              if (!window.confirm('量化正在进行中，确定要关闭窗口吗？关闭后您将无法看到进度，但后台处理会继续。')) {
+                return;
+              }
+            }
+            // 清理定时器和状态
+            if (quantTimeoutRef.current) {
+              clearTimeout(quantTimeoutRef.current);
+              quantTimeoutRef.current = null;
+            }
+            setShowQuantModal(false);
+            setQuantProgress('');
+            setQuantStartTime(null);
+            setQuantElapsedTime(0);
+          }}>
             <div className="config-modal quant-modal" onClick={(e) => e.stopPropagation()}>
               <div className="config-modal-header">
                 <h3>模型量化导出 (TFLite)</h3>
-                <button 
-                  className="close-btn" 
-                  onClick={() => setShowQuantModal(false)}
-                  disabled={isQuanting}
+                <button
+                  className="close-btn"
+                  onClick={() => {
+                    if (isQuanting) {
+                      if (!window.confirm('量化正在进行中，确定要关闭窗口吗？关闭后您将无法看到进度，但后台处理会继续。')) {
+                        return;
+                      }
+                    }
+                    // 清理定时器和状态
+                    if (quantTimeoutRef.current) {
+                      clearTimeout(quantTimeoutRef.current);
+                      quantTimeoutRef.current = null;
+                    }
+                    setShowQuantModal(false);
+                    setQuantProgress('');
+                    setQuantStartTime(null);
+                    setQuantElapsedTime(0);
+                  }}
+                  title={isQuanting ? '量化正在进行，点击将关闭窗口（后台处理会继续）' : '关闭'}
                 >
                   <IoClose />
                 </button>
               </div>
               
               <div className="config-modal-content">
-                <div className="config-item">
-                  <label>输入尺寸 (imgsz)</label>
-                  <input
-                    type="number"
-                    min="32"
-                    max="2048"
-                    step="32"
-                    value={quantImgSz}
-                    onChange={(e) => setQuantImgSz(Math.max(32, Math.min(2048, parseInt(e.target.value || '0', 10))))}
-                    disabled={isQuanting}
-                  />
-                </div>
+                {/* 表单：只在未开始量化且无结果时显示 */}
+                {!isQuanting && !quantResult && (
+                  <>
+                    <div className="config-item">
+                      <label>输入尺寸 (imgsz)</label>
+                      <input
+                        type="number"
+                        min="32"
+                        max="2048"
+                        step="32"
+                        value={quantImgSz}
+                        onChange={(e) => setQuantImgSz(Math.max(32, Math.min(2048, parseInt(e.target.value || '0', 10))))}
+                      />
+                    </div>
 
-                <div className="config-item checkbox-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={quantInt8}
-                      onChange={(e) => setQuantInt8(e.target.checked)}
-                      disabled={isQuanting}
-                    />
-                    <span>使用 int8 量化</span>
-                  </label>
-                </div>
+                    <div className="config-item checkbox-row">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={quantInt8}
+                          onChange={(e) => setQuantInt8(e.target.checked)}
+                        />
+                        <span>使用 int8 量化</span>
+                      </label>
+                    </div>
 
-                <div className="config-item checkbox-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={quantNe301}
-                      onChange={(e) => setQuantNe301(e.target.checked)}
-                      disabled={isQuanting}
-                    />
-                    <span>量化为 NE301 设备模型</span>
-                  </label>
-                </div>
+                    <div className="config-item checkbox-row">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={quantNe301}
+                          onChange={(e) => setQuantNe301(e.target.checked)}
+                        />
+                        <span>量化为 NE301 设备模型</span>
+                      </label>
+                    </div>
 
-                <div className="config-item">
-                  <label>校准数据占比 (fraction)</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="1"
-                    value={quantFraction}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      if (!isNaN(v)) setQuantFraction(Math.min(1, Math.max(0, v)));
-                    }}
-                    disabled={isQuanting}
-                  />
-                </div>
+                    <div className="config-item">
+                      <label>校准数据占比 (fraction)</label>
+                      <input
+                        type="number"
+                        step="0.05"
+                        min="0"
+                        max="1"
+                        value={quantFraction}
+                        onChange={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (!isNaN(v)) setQuantFraction(Math.min(1, Math.max(0, v)));
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
 
-                {quantResult && (
-                  <div className="quant-result">
-                    <div><strong>导出结果:</strong> {quantResult.message || '成功'}</div>
-                    {quantResult.tflite_path && <div>文件: {quantResult.tflite_path}</div>}
-                    {quantResult.params && (
-                      <div>参数: imgsz={quantResult.params.imgsz}, int8={String(quantResult.params.int8)}, fraction={quantResult.params.fraction}</div>
+                {/* 等待过程：量化进行中时显示 */}
+                {isQuanting && (
+                  <div className="quant-progress-section">
+                    <div className="quant-progress-header">
+                      <div className="quant-progress-spinner"></div>
+                      <span className="quant-progress-text">量化处理中，请耐心等待...</span>
+                    </div>
+                    {quantProgress && (
+                      <div className="quant-progress-message">
+                        {quantProgress}
+                      </div>
                     )}
+                    {quantStartTime && (
+                      <div className="quant-progress-time">
+                        已用时: {quantElapsedTime} 秒
+                      </div>
+                    )}
+                    <div className="quant-progress-hint">
+                      <p>量化过程可能需要几分钟时间，包括：</p>
+                      <ul>
+                        <li>导出 TFLite int8 量化模型</li>
+                        {quantNe301 && (
+                          <>
+                            <li>生成 NE301 JSON 配置文件</li>
+                            <li>编译 NE301 模型包（.bin 文件）</li>
+                          </>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+
+                {/* 结果：量化完成后显示 */}
+                {quantResult && !isQuanting && (
+                  <div className="quant-result">
+                    <div className="quant-result-message">
+                      <strong>导出结果:</strong> {quantResult.message || '成功'}
+                    </div>
+                    {quantResult.params && (
+                      <div className="quant-result-params">
+                        参数: imgsz={quantResult.params.imgsz}, int8={String(quantResult.params.int8)}, fraction={quantResult.params.fraction}
+                      </div>
+                    )}
+                    <div className="quant-files-list">
+                      {quantResult.tflite_path && (
+                        <div className="quant-file-item">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">TFLite模型</div>
+                            <div className="quant-file-name">{quantResult.tflite_path.split('/').pop()}</div>
+                          </div>
+                          <button
+                            className="btn-download-file"
+                            onClick={() => handleDownloadExportFile('tflite')}
+                          >
+                            <IoDownload /> 下载
+                          </button>
+                        </div>
+                      )}
+                      {quantResult.ne301_tflite && (
+                        <div className="quant-file-item">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">NE301量化模型</div>
+                            <div className="quant-file-name">{quantResult.ne301_tflite.split('/').pop()}</div>
+                          </div>
+                          <button
+                            className="btn-download-file"
+                            onClick={() => handleDownloadExportFile('ne301_tflite')}
+                          >
+                            <IoDownload /> 下载
+                          </button>
+                        </div>
+                      )}
+                      {quantResult.ne301_json && (
+                        <div className="quant-file-item">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">NE301配置文件</div>
+                            <div className="quant-file-name">{quantResult.ne301_json.split('/').pop()}</div>
+                          </div>
+                          <button
+                            className="btn-download-file"
+                            onClick={() => handleDownloadExportFile('ne301_json')}
+                          >
+                            <IoDownload /> 下载
+                          </button>
+                        </div>
+                      )}
+                      {quantResult.ne301_model_bin && (
+                        <div className="quant-file-item model-package">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">NE301模型包</div>
+                            <div className="quant-file-name">{quantResult.ne301_model_bin.split('/').pop()}</div>
+                          </div>
+                          <button
+                            className="btn-download-file model-package"
+                            onClick={() => handleDownloadExportFile('ne301_model_bin')}
+                          >
+                            <IoDownload /> 下载模型包
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
 
               <div className="config-modal-actions">
-                <button
-                  className="btn-start-training"
-                  onClick={async () => {
+                {/* 按钮：只在未开始量化且无结果时显示 */}
+                {!isQuanting && !quantResult && (
+                  <button
+                    className="btn-start-training"
+                    onClick={async () => {
                     if (!selectedTrainingId) return;
                     setIsQuanting(true);
                     setQuantResult(null);
+                    setQuantProgress('正在初始化量化流程...');
+                    const startTime = Date.now();
+                    setQuantStartTime(startTime);
+                    setQuantElapsedTime(0);
+                    
+                    // 清除之前的超时定时器
+                    if (quantTimeoutRef.current) {
+                      clearTimeout(quantTimeoutRef.current);
+                    }
+                    
+                    // 设置进度提示的定时更新
+                    const progressSteps = [
+                      { delay: 3000, message: '正在加载模型文件...' },
+                      { delay: 8000, message: '正在进行 TFLite int8 量化...' },
+                    ];
+                    
+                    if (quantNe301) {
+                      progressSteps.push(
+                        { delay: 20000, message: '正在生成 NE301 JSON 配置文件...' },
+                        { delay: 40000, message: '正在编译 NE301 模型包，这可能需要几分钟...' }
+                      );
+                    }
+                    
+                    progressSteps.forEach(({ delay, message }) => {
+                      quantTimeoutRef.current = setTimeout(() => {
+                        setQuantProgress(message);
+                      }, delay);
+                    });
+                    
                     try {
                       const response = await fetch(
                         `${API_BASE_URL}/projects/${projectId}/train/${selectedTrainingId}/export/tflite?imgsz=${quantImgSz}&int8=${quantInt8}&fraction=${quantFraction}&ne301=${quantNe301}`,
                         { method: 'POST' }
                       );
+                      
+                      // 清除所有进度提示定时器
+                      if (quantTimeoutRef.current) {
+                        clearTimeout(quantTimeoutRef.current);
+                        quantTimeoutRef.current = null;
+                      }
+                      
                       if (!response.ok) {
                         const err = await response.json();
                         throw new Error(err.detail || '量化导出失败');
                       }
+                      
                       const data = await response.json();
                       setQuantResult(data);
-                      alert('量化导出成功');
+                      
+                      // 显示成功消息，但不使用 alert（更友好的方式）
+                      const finalElapsedTime = quantElapsedTime || (quantStartTime ? Math.floor((Date.now() - quantStartTime) / 1000) : 0);
+                      const minutes = Math.floor(finalElapsedTime / 60);
+                      const seconds = finalElapsedTime % 60;
+                      const timeStr = minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+                      setQuantProgress(`量化成功完成！总耗时: ${timeStr}`);
+                      
+                      // 立即清除进度提示，直接显示结果
+                      setTimeout(() => {
+                        setQuantProgress('');
+                      }, 100);
                     } catch (error: any) {
-                      alert(`量化导出失败: ${error.message}`);
+                      // 清除进度提示定时器
+                      if (quantTimeoutRef.current) {
+                        clearTimeout(quantTimeoutRef.current);
+                        quantTimeoutRef.current = null;
+                      }
+                      
+                      const errorMessage = error.message || '未知错误';
+                      setQuantProgress(`✗ 量化失败: ${errorMessage}`);
+                      
+                      // 5秒后显示 alert，让用户先看到进度提示中的错误消息
+                      setTimeout(() => {
+                        alert(`量化导出失败: ${errorMessage}`);
+                      }, 500);
                     } finally {
                       setIsQuanting(false);
+                      setQuantStartTime(null);
+                      // 不清除 quantElapsedTime，保持最终时间显示
                     }
                   }}
-                  disabled={isQuanting}
                 >
-                  {isQuanting ? '量化中...' : '开始量化'}
+                  开始量化
                 </button>
+                )}
+                
+                {/* 完成后的操作按钮 */}
+                {quantResult && !isQuanting && (
+                  <button
+                    className="btn-start-training"
+                    onClick={() => {
+                      setQuantResult(null);
+                      setQuantProgress('');
+                      setQuantElapsedTime(0);
+                      setQuantStartTime(null);
+                    }}
+                  >
+                    重新量化
+                  </button>
+                )}
               </div>
             </div>
           </div>

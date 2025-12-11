@@ -1,5 +1,5 @@
 """API 路由定义"""
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -994,7 +994,11 @@ def export_tflite_model(
         # export_path 可能是 Path 或 str
         export_path = Path(export_path)
 
+        # NE301 相关变量（确保在正确的作用域中定义）
         ne301_path: Optional[str] = None
+        ne301_model_bin_path: Optional[str] = None
+        ne301_json_path: Optional[str] = None
+        
         if ne301:
             # 追加 NE301 量化步骤：生成配置并调用 stm32ai 脚本
             quant_dir = Path(__file__).resolve().parent.parent / "quantization"
@@ -1088,8 +1092,197 @@ def export_tflite_model(
                 )
             ne301_path = str(tflites[0])
             print(f"[NE301] quantized tflite ready: {ne301_path}")
+            
+            # 验证文件是否真的存在
+            if not Path(ne301_path).exists():
+                logger.error(f"[NE301] TFLite 文件不存在: {ne301_path}")
+                raise HTTPException(status_code=500, detail=f"NE301 TFLite 文件生成失败: {ne301_path}")
 
-        return {
+        # 如果需要生成 NE301 JSON 配置和编译，先确保 JSON 文件保存（即使编译失败也要保存）
+        if ne301 and ne301_path:
+            # 先保存 JSON 配置文件（这一步必须在 try-except 外面，确保即使后续步骤失败也能保存）
+            try:
+                from backend.utils.ne301_export import (
+                    generate_ne301_json_config,
+                    _convert_to_json_serializable
+                )
+                
+                # 读取 data.yaml 获取类别信息
+                with open(data_yaml, "r", encoding="utf-8") as f:
+                    data_info = yaml.safe_load(f)
+                
+                class_names = data_info.get("names", [])
+                if isinstance(class_names, dict):
+                    # 如果是字典格式 {0: "class1", 1: "class2"}, 转换为列表
+                    max_idx = max(class_names.keys())
+                    names_list = [""] * (max_idx + 1)
+                    for idx, name in class_names.items():
+                        names_list[int(idx)] = name
+                    class_names = names_list
+                elif not isinstance(class_names, list):
+                    class_names = []
+                
+                num_classes = len(class_names) if class_names else 80  # 默认 COCO 80 类
+                
+                # 生成模型名称（不含扩展名）
+                tflite_file = Path(ne301_path)
+                model_base_name = tflite_file.stem  # 例如: best_ne301_quant_pc_ui_xxx
+                
+                # 生成 JSON 配置（会尝试从 TFLite 模型提取真实的量化参数和输出尺寸）
+                json_config = generate_ne301_json_config(
+                    tflite_path=tflite_file,
+                    model_name=model_base_name,
+                    input_size=imgsz,
+                    num_classes=num_classes,
+                    class_names=class_names,
+                    output_scale=None,  # 从模型提取
+                    output_zero_point=None,  # 从模型提取
+                    confidence_threshold=0.25,
+                    iou_threshold=0.45,
+                    output_shape=None,  # 从模型提取
+                )
+                
+                # 确保 JSON 文件保存在与 TFLite 文件相同的目录（quantized_models），便于下载
+                json_output_dir = tflite_file.parent  # quantized_models 目录
+                json_output_dir.mkdir(parents=True, exist_ok=True)  # 确保目录存在
+                json_file_path = json_output_dir / f"{model_base_name}.json"
+                
+                # 保存 JSON 配置文件（确保所有值都是 JSON 可序列化的）
+                json_config_clean = _convert_to_json_serializable(json_config)
+                with open(json_file_path, "w", encoding="utf-8") as f:
+                    json.dump(json_config_clean, f, indent=2, ensure_ascii=False)
+                
+                # 验证文件是否真的保存成功
+                if not json_file_path.exists():
+                    logger.error(f"[NE301] JSON 文件保存失败: {json_file_path}")
+                    raise RuntimeError(f"JSON 配置文件保存失败: {json_file_path}")
+                
+                # 保存 JSON 路径（在外部作用域中，确保即使后续步骤失败也能返回）
+                ne301_json_path = str(json_file_path)
+                logger.info(f"[NE301] ✓ JSON config saved to: {json_file_path}")
+                print(f"[NE301] ✓ JSON config saved to: {json_file_path}")
+                
+                # 保存 json_config 到外部作用域，供后续使用
+                json_config_saved = json_config
+                
+            except Exception as e:
+                logger.error(f"[NE301] JSON 配置文件生成失败: {e}", exc_info=True)
+                print(f"[NE301] JSON 配置文件生成失败: {e}")
+                # JSON 生成失败不影响 TFLite 文件的返回
+                json_config_saved = None
+                ne301_json_path = None  # 确保变量被定义，避免后续NameError
+            
+            # 尝试编译 NE301 模型包（这一步失败不影响文件下载）
+            logger.info("[NE301] 开始编译 NE301 模型包...")
+            print("[NE301] 开始编译 NE301 模型包...")
+            try:
+                # 确保 json_config 可用（如果前面的生成失败，尝试从文件读取）
+                json_config_for_copy = json_config_saved if 'json_config_saved' in locals() and json_config_saved is not None else None
+                if json_config_for_copy is None:
+                    # 如果 json_config 不存在，尝试从已保存的 JSON 文件读取
+                    if ne301_json_path and Path(ne301_json_path).exists():
+                        with open(ne301_json_path, "r", encoding="utf-8") as f:
+                            json_config_for_copy = json.load(f)
+                            logger.info(f"[NE301] 从文件读取 JSON 配置: {ne301_json_path}")
+                            print(f"[NE301] 从文件读取 JSON 配置: {ne301_json_path}")
+                    else:
+                        # 如果 JSON 文件也不存在，跳过编译步骤
+                        logger.warning("[NE301] JSON 配置不可用，跳过编译步骤")
+                        print("[NE301] JSON 配置不可用，跳过编译步骤")
+                        raise RuntimeError("JSON 配置不可用，无法继续编译")
+                
+                from backend.utils.ne301_export import (
+                    copy_model_to_ne301_project,
+                    build_ne301_model
+                )
+                
+                # 获取 NE301 项目路径（优先使用已初始化的路径）
+                from backend.utils.ne301_init import get_ne301_project_path
+                try:
+                    ne301_project_path = get_ne301_project_path()
+                except Exception as e:
+                    logger.warning(f"[NE301] Failed to get NE301 project path: {e}")
+                    # 回退到环境变量或配置
+                    ne301_project_path = settings.NE301_PROJECT_PATH or os.environ.get("NE301_PROJECT_PATH")
+                    if ne301_project_path:
+                        ne301_project_path = Path(ne301_project_path)
+                    else:
+                        ne301_project_path = settings.DATASETS_ROOT.parent / "ne301"
+                
+                if not isinstance(ne301_project_path, Path):
+                    ne301_project_path = Path(ne301_project_path)
+                
+                logger.info(f"[NE301] 检查 NE301 项目路径: {ne301_project_path}")
+                print(f"[NE301] 检查 NE301 项目路径: {ne301_project_path}")
+                logger.info(f"[NE301] 项目路径存在: {ne301_project_path.exists()}")
+                print(f"[NE301] 项目路径存在: {ne301_project_path.exists()}")
+                
+                if not ne301_project_path.exists() or not (ne301_project_path / "Model").exists():
+                    logger.warning(f"[NE301] NE301 项目目录不存在或不完整: {ne301_project_path}，JSON 已保存到: {ne301_json_path}")
+                    print(f"[NE301] Project directory not found or incomplete: {ne301_project_path}")
+                    print(f"[NE301] JSON config has been saved to: {ne301_json_path}")
+                    print(f"[NE301] The project should be automatically cloned on startup.")
+                    print(f"[NE301] If this error persists, check the startup logs for NE301 initialization.")
+                    print(f"[NE301] Or manually copy files to NE301 project:")
+                    print(f"  cp {tflite_file} {ne301_project_path}/Model/weights/")
+                    print(f"  cp {ne301_json_path} {ne301_project_path}/Model/weights/")
+                    print(f"  cd {ne301_project_path} && make model")
+                    raise FileNotFoundError(f"NE301 项目目录不存在或不完整: {ne301_project_path}")
+                else:
+                    logger.info(f"[NE301] ✓ NE301 项目路径验证通过")
+                    print(f"[NE301] ✓ NE301 项目路径验证通过")
+                    
+                    # 复制模型和 JSON 到 NE301 项目
+                    logger.info(f"[NE301] 开始复制模型文件到 NE301 项目...")
+                    print(f"[NE301] 开始复制模型文件到 NE301 项目...")
+                    tflite_dest, json_dest = copy_model_to_ne301_project(
+                        tflite_path=tflite_file,
+                        json_config=json_config_for_copy,
+                        ne301_project_path=ne301_project_path,
+                        model_name=model_base_name
+                    )
+                    logger.info(f"[NE301] Model files copied to NE301 project: {tflite_dest}, {json_dest}")
+                    print(f"[NE301] Model files copied to NE301 project: {tflite_dest}, {json_dest}")
+                    
+                    # 使用 Docker 编译模型（从配置或环境变量）
+                    use_docker = settings.NE301_USE_DOCKER if hasattr(settings, 'NE301_USE_DOCKER') else (
+                        os.environ.get("NE301_USE_DOCKER", "true").lower() == "true"
+                    )
+                    docker_image = settings.NE301_DOCKER_IMAGE if hasattr(settings, 'NE301_DOCKER_IMAGE') else (
+                        os.environ.get("NE301_DOCKER_IMAGE", "camthink/ne301-dev:latest")
+                    )
+                    
+                    logger.info(f"[NE301] Building model package using {'Docker' if use_docker else 'local'} (image: {docker_image})...")
+                    print(f"[NE301] Building model package using {'Docker' if use_docker else 'local'} (image: {docker_image})...")
+                    model_bin = build_ne301_model(
+                        ne301_project_path=ne301_project_path,
+                        model_name=model_base_name,
+                        docker_image=docker_image,
+                        use_docker=use_docker
+                    )
+                    
+                    if model_bin:
+                        ne301_model_bin_path = str(model_bin)
+                        logger.info(f"[NE301] ✓ Model package ready: {ne301_model_bin_path}")
+                        print(f"[NE301] ✓ Model package ready: {ne301_model_bin_path}")
+                    else:
+                        logger.warning("[NE301] Model build completed but no package file found")
+                        print("[NE301] ⚠️ Model build completed but no package file found")
+                            
+            except Exception as e:
+                # 编译失败不影响量化结果的返回
+                # 但已生成的文件（TFLite、JSON）仍然可以下载
+                logger.error(f"[NE301] Model package build failed: {e}", exc_info=True)
+                print(f"[NE301] ✗ Model package build failed: {type(e).__name__}: {e}")
+                print(f"[NE301] 注意：TFLite 和 JSON 文件已生成，可以下载使用")
+                if ne301_path:
+                    print(f"[NE301]   - TFLite: {ne301_path}")
+                if 'ne301_json_path' in locals() and ne301_json_path:
+                    print(f"[NE301]   - JSON: {ne301_json_path}")
+                import traceback
+                traceback.print_exc()
+
+        result = {
             "message": "TFLite export success",
             "tflite_path": str(export_path),
             "params": {
@@ -1099,8 +1292,50 @@ def export_tflite_model(
                 "data": str(data_yaml)
             },
             "ne301": ne301,
-            "ne301_tflite": ne301_path
         }
+        
+        # 添加 NE301 相关路径（即使编译失败，也要返回已生成的文件）
+        if ne301 and ne301_path:
+            # 验证并添加 TFLite 文件路径
+            tflite_path_obj = Path(ne301_path)
+            if tflite_path_obj.exists():
+                result["ne301_tflite"] = ne301_path
+                file_size = tflite_path_obj.stat().st_size
+                logger.info(f"[NE301] ✓ TFLite 文件已生成并可下载: {ne301_path} (size: {file_size} bytes)")
+            else:
+                logger.error(f"[NE301] ✗ TFLite 文件不存在: {ne301_path}")
+                # 即使文件不存在也返回路径，让前端知道应该在哪里查找
+            
+            # 验证并添加 JSON 配置文件路径（即使编译失败也应返回）
+            if ne301_json_path:
+                json_path_obj = Path(ne301_json_path)
+                if json_path_obj.exists():
+                    result["ne301_json"] = ne301_json_path
+                    file_size = json_path_obj.stat().st_size
+                    logger.info(f"[NE301] ✓ JSON 配置文件已生成并可下载: {ne301_json_path} (size: {file_size} bytes)")
+                else:
+                    logger.error(f"[NE301] ✗ JSON 配置文件不存在: {ne301_json_path}")
+                    # 即使文件不存在也返回路径，让前端知道应该在哪里查找
+            
+            # 验证并添加编译后的模型包路径（仅当编译成功时）
+            if ne301_model_bin_path:
+                bin_path_obj = Path(ne301_model_bin_path)
+                if bin_path_obj.exists():
+                    result["ne301_model_bin"] = ne301_model_bin_path
+                    file_size = bin_path_obj.stat().st_size
+                    logger.info(f"[NE301] ✓ 模型包已生成并可下载: {ne301_model_bin_path} (size: {file_size} bytes)")
+                else:
+                    logger.warning(f"[NE301] ⚠️ 模型包不存在（编译可能失败）: {ne301_model_bin_path}")
+        
+        # 验证原始 TFLite 文件
+        export_path_obj = Path(export_path)
+        if export_path_obj.exists():
+            file_size = export_path_obj.stat().st_size
+            logger.info(f"[Export] ✓ 原始 TFLite 文件已生成: {export_path} (size: {file_size} bytes)")
+        else:
+            logger.error(f"[Export] ✗ 原始 TFLite 文件不存在: {export_path}")
+        
+        return result
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"Ultralytics or TensorFlow not installed: {str(e)}")
     except Exception as e:
@@ -1112,6 +1347,161 @@ def export_tflite_model(
         except Exception:
             pass
         raise HTTPException(status_code=500, detail=f"TFLite export failed: {str(e)}")
+
+@router.get("/projects/{project_id}/train/{training_id}/export/tflite/download")
+def download_tflite_export(
+    project_id: str,
+    training_id: str,
+    file_type: str = Query(..., description="文件类型: tflite, ne301_tflite, ne301_json, ne301_model_bin"),
+    db: Session = Depends(get_db)
+):
+    """
+    下载模型量化导出的文件
+    
+    Args:
+        project_id: 项目ID
+        training_id: 训练ID
+        file_type: 文件类型 (tflite, ne301_tflite, ne301_json, ne301_model_bin)
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # 构建可能的文件路径
+    # 注意：训练目录可能是 train_{training_id} 或 train_{project_id}（如果 training_id 包含时间戳）
+    # 尝试多个可能的路径
+    possible_base_dirs = [
+        settings.DATASETS_ROOT / project_id / f"train_{training_id}",
+        settings.DATASETS_ROOT / project_id / f"train_{project_id}",  # 回退到 project_id
+    ]
+    
+    # 如果 training_id 包含时间戳（格式：xxx_yyyymmdd_hhmmss），也尝试去掉时间戳的部分
+    if "_" in training_id:
+        parts = training_id.rsplit("_", 2)  # 最多分成3部分，支持 xxx_yyyymmdd_hhmmss
+        if len(parts) >= 2:
+            # 尝试去掉最后的时间戳部分
+            base_id = "_".join(parts[:-2]) if len(parts) > 2 else parts[0]
+            possible_base_dirs.insert(1, settings.DATASETS_ROOT / project_id / f"train_{base_id}")
+    
+    # 查找实际存在的训练目录
+    base_dir = None
+    for possible_dir in possible_base_dirs:
+        if possible_dir.exists() and (possible_dir / "weights").exists():
+            base_dir = possible_dir
+            logger.info(f"[Download] 找到训练目录: {base_dir}")
+            break
+    
+    if not base_dir:
+        # 如果都找不到，使用第一个作为默认值（会在后续检查中报错）
+        base_dir = possible_base_dirs[0]
+        logger.warning(f"[Download] 未找到训练目录，使用默认路径: {base_dir} (可能不存在)")
+        logger.info(f"[Download] 已尝试的路径: {[str(d) for d in possible_base_dirs]}")
+    
+    weights_dir = base_dir / "weights"
+    
+    logger.info(f"[Download] 查找文件类型: {file_type}, 基础目录: {base_dir}")
+    
+    file_path = None
+    filename = None
+    
+    if file_type == "tflite":
+        # 查找最新的 TFLite 文件（Ultralytics 导出的原始 TFLite）
+        tflite_files = list(weights_dir.glob("*.tflite"))
+        logger.info(f"[Download] 在 {weights_dir} 找到 {len(tflite_files)} 个 TFLite 文件")
+        if not tflite_files:
+            # 也检查 best_saved_model 目录
+            saved_model_dir = weights_dir / "best_saved_model"
+            if saved_model_dir.exists():
+                tflite_files = list(saved_model_dir.glob("*.tflite"))
+                logger.info(f"[Download] 在 best_saved_model 目录找到 {len(tflite_files)} 个 TFLite 文件")
+        if not tflite_files:
+            raise HTTPException(status_code=404, detail=f"TFLite file not found in {weights_dir}")
+        file_path = max(tflite_files, key=lambda p: p.stat().st_mtime)
+        filename = file_path.name
+        logger.info(f"[Download] 选择文件: {file_path}")
+    elif file_type == "ne301_tflite":
+        # NE301 量化后的 TFLite 文件
+        ne301_dir = weights_dir / "ne301_quant" / "quantized_models"
+        logger.info(f"[Download] 查找 NE301 TFLite 文件，目录: {ne301_dir}")
+        if not ne301_dir.exists():
+            logger.error(f"[Download] NE301 目录不存在: {ne301_dir}")
+            raise HTTPException(status_code=404, detail=f"NE301 TFLite directory not found: {ne301_dir}")
+        tflite_files = list(ne301_dir.glob("*.tflite"))
+        logger.info(f"[Download] 在 {ne301_dir} 找到 {len(tflite_files)} 个 TFLite 文件: {[f.name for f in tflite_files]}")
+        if not tflite_files:
+            raise HTTPException(status_code=404, detail=f"NE301 TFLite file not found in {ne301_dir}")
+        file_path = max(tflite_files, key=lambda p: p.stat().st_mtime)
+        filename = file_path.name
+        logger.info(f"[Download] 选择文件: {file_path}")
+    elif file_type == "ne301_json":
+        # NE301 JSON 配置文件
+        ne301_dir = weights_dir / "ne301_quant" / "quantized_models"
+        logger.info(f"[Download] 查找 NE301 JSON 文件，目录: {ne301_dir}")
+        if not ne301_dir.exists():
+            logger.error(f"[Download] NE301 目录不存在: {ne301_dir}")
+            raise HTTPException(status_code=404, detail=f"NE301 JSON directory not found: {ne301_dir}")
+        json_files = list(ne301_dir.glob("*.json"))
+        logger.info(f"[Download] 在 {ne301_dir} 找到 {len(json_files)} 个 JSON 文件: {[f.name for f in json_files]}")
+        if not json_files:
+            raise HTTPException(status_code=404, detail=f"NE301 JSON file not found in {ne301_dir}")
+        file_path = max(json_files, key=lambda p: p.stat().st_mtime)
+        filename = file_path.name
+        logger.info(f"[Download] 选择文件: {file_path}")
+    elif file_type == "ne301_model_bin":
+        # NE301 编译后的模型包
+        # 尝试多个可能的位置
+        from backend.utils.ne301_init import get_ne301_project_path
+        try:
+            ne301_project_path = get_ne301_project_path()
+        except Exception:
+            ne301_project_path = Path(os.environ.get("NE301_PROJECT_PATH", "/workspace/ne301"))
+        
+        logger.info(f"[Download] 查找 NE301 模型包，项目路径: {ne301_project_path}")
+        
+        possible_paths = [
+            ne301_project_path / "build" / "ne301_Model.bin",
+            ne301_project_path / "Model" / "build" / "ne301_Model.bin",
+            ne301_project_path / "build" / "Model.bin",
+        ]
+        
+        model_bin_path = None
+        for path in possible_paths:
+            if path.exists():
+                model_bin_path = path
+                logger.info(f"[Download] 找到模型包: {model_bin_path}")
+                break
+        
+        if not model_bin_path:
+            logger.error(f"[Download] 模型包未找到，已尝试路径: {possible_paths}")
+            raise HTTPException(status_code=404, detail=f"NE301 model package not found. Searched in: {[str(p) for p in possible_paths]}")
+        
+        file_path = model_bin_path
+        filename = model_bin_path.name
+    else:
+        raise HTTPException(status_code=400, detail=f"Invalid file_type: {file_type}. Must be one of: tflite, ne301_tflite, ne301_json, ne301_model_bin")
+    
+    # 最终验证文件是否存在
+    if not file_path or not file_path.exists():
+        logger.error(f"[Download] ✗ 文件不存在: {file_path} (file_type: {file_type})")
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+    
+    # 验证文件大小（文件不应该为空）
+    file_size = file_path.stat().st_size
+    if file_size == 0:
+        logger.warning(f"[Download] ⚠️ 文件大小为 0: {file_path}")
+    
+    logger.info(f"[Download] ✓ 文件验证通过，准备下载: {file_path} (size: {file_size} bytes)")
+    
+    # 确定媒体类型
+    media_type = 'application/octet-stream'
+    if file_type.endswith('json'):
+        media_type = 'application/json'
+    
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type=media_type
+    )
 
 @router.post("/projects/{project_id}/train/stop")
 def stop_training(project_id: str, training_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
@@ -1249,18 +1639,37 @@ def clear_training(project_id: str, training_id: Optional[str] = Query(None), db
 
 # ========== MQTT 服务管理 ==========
 @router.get("/mqtt/status")
-def get_mqtt_status():
+def get_mqtt_status(request: Request):
     """获取 MQTT 服务状态"""
-    from backend.config import get_local_ip
+    from backend.config import get_mqtt_broker_host, get_local_ip
     
     if settings.MQTT_USE_BUILTIN_BROKER:
-        broker = get_local_ip()
+        # 使用新的函数获取对外显示的主机 IP（而不是容器内部 IP）
+        broker = get_mqtt_broker_host(request)
         port = settings.MQTT_BUILTIN_PORT
         broker_type = "builtin"
     else:
         broker = settings.MQTT_BROKER
         port = settings.MQTT_PORT
         broker_type = "external"
+    
+    # 获取服务器 IP（用于显示在项目信息中）
+    server_ip = get_mqtt_broker_host(request)
+    # 如果获取到的是容器内部 IP 或 localhost，尝试其他方法
+    if server_ip in ["localhost", "127.0.0.1", "0.0.0.0"] or server_ip.startswith("172.17.") or server_ip.startswith("172.18.") or server_ip.startswith("172.19."):
+        # 尝试从请求的 Host 头获取
+        host = request.headers.get("Host", "")
+        if host:
+            host_ip = host.split(":")[0]
+            if host_ip not in ["localhost", "127.0.0.1", "0.0.0.0"]:
+                server_ip = host_ip
+            else:
+                # 如果 Host 头也是 localhost，尝试从 X-Forwarded-Host 获取
+                forwarded_host = request.headers.get("X-Forwarded-Host", "")
+                if forwarded_host:
+                    forwarded_ip = forwarded_host.split(":")[0]
+                    if forwarded_ip not in ["localhost", "127.0.0.1", "0.0.0.0"]:
+                        server_ip = forwarded_ip
     
     return {
         "enabled": settings.MQTT_ENABLED,
@@ -1269,7 +1678,9 @@ def get_mqtt_status():
         "connected": mqtt_service.is_connected if settings.MQTT_ENABLED else False,
         "broker": broker if settings.MQTT_ENABLED else None,
         "port": port if settings.MQTT_ENABLED else None,
-        "topic": settings.MQTT_UPLOAD_TOPIC if settings.MQTT_ENABLED else None
+        "topic": settings.MQTT_UPLOAD_TOPIC if settings.MQTT_ENABLED else None,
+        "server_ip": server_ip,  # 服务器 IP 地址
+        "server_port": settings.PORT  # 服务器端口
     }
 
 

@@ -1,0 +1,60 @@
+services:
+  neoeyestool:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neoeyestool
+    ports:
+      # 格式：主机IP:主机端口:容器端口
+      # 使用 0.0.0.0 绑定所有网络接口，允许外部访问
+      - "0.0.0.0:8000:8000"  # Web 服务端口
+      - "0.0.0.0:1883:1883"  # MQTT 端口
+    volumes:
+      # 数据持久化
+      - ./datasets:/app/datasets
+      - ./data:/app/data
+      - backend-data:/app/backend/data
+      # NE301 项目目录（自动初始化）
+      # 容器启动时会自动检测：如果主机目录为空则自动克隆，否则使用现有内容
+      # Docker-in-Docker 编译需要主机路径，所以必须使用挂载（会自动初始化）
+      # 注意：首次运行时会自动克隆到 ./ne301，无需手动操作
+      - ./ne301:/workspace/ne301  # 主机目录，容器启动时自动克隆（如果为空）
+      # Docker socket（用于在容器内运行 Docker 命令来编译 NE301 模型）
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=False
+      # MQTT 配置
+      - MQTT_ENABLED=true
+      - MQTT_USE_BUILTIN_BROKER=true
+      - MQTT_PORT=1883
+      - MQTT_BUILTIN_PORT=1883
+      # MQTT Broker 对外显示的地址（建议设置为服务器的真实 IP 地址）
+      # 如果不设置，系统会尝试自动检测，但在 Docker 环境中可能不准确
+      - MQTT_BROKER_HOST=192.168.110.109
+      # 数据库配置
+      - DATABASE_URL=sqlite:////app/backend/data/annotator.db
+      # 文件存储配置
+      - DATASETS_ROOT=/app/datasets
+      # NE301 模型编译配置
+      # NE301_PROJECT_PATH: 使用工作空间挂载路径（主机目录映射，容器启动时自动初始化）
+      - NE301_PROJECT_PATH=/workspace/ne301
+      # CONTAINER_NAME: Docker-in-Docker 需要容器名来动态获取主机路径（自动检测，不同电脑路径不同）
+      - CONTAINER_NAME=neoeyestool
+      # NE301_HOST_PATH: 可选，仅当自动检测失败时使用（不推荐手动设置）
+      # 自动检测会尝试：1) docker inspect 查找 /workspace/ne301 挂载点, 2) 通过 datasets 挂载点推断项目根目录
+      # 正常情况下不需要设置此变量，系统会自动检测
+      # - NE301_HOST_PATH=/path/to/project/ne301
+      - NE301_USE_DOCKER=true
+      - NE301_DOCKER_IMAGE=camthink/ne301-dev:latest
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  backend-data:
