@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: neoeyestool
+    container_name: aitoolstack
     ports:
       # 格式：主机IP:主机端口:容器端口
       # 使用 0.0.0.0 绑定所有网络接口，允许外部访问
@@ -41,7 +41,7 @@ services:
       # NE301_PROJECT_PATH: 使用工作空间挂载路径（主机目录映射，容器启动时自动初始化）
       - NE301_PROJECT_PATH=/workspace/ne301
       # CONTAINER_NAME: Docker-in-Docker 需要容器名来动态获取主机路径（自动检测，不同电脑路径不同）
-      - CONTAINER_NAME=neoeyestool
+      - CONTAINER_NAME=aitoolstack
       # NE301_HOST_PATH: 可选，仅当自动检测失败时使用（不推荐手动设置）
       # 自动检测会尝试：1) docker inspect 查找 /workspace/ne301 挂载点, 2) 通过 datasets 挂载点推断项目根目录
       # 正常情况下不需要设置此变量，系统会自动检测

@@ -29,7 +29,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ activeMenu, onMenu
       <div className="nav-container">
         <div className="nav-left">
           <div className="nav-logo">
-            <span className="logo-text">CamThink AI Workspace</span>
+            <span className="logo-text">AI Tool Stack</span>
           </div>
           <nav className="nav-menu">
             {menuItems.map((item) => (

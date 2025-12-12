@@ -1,5 +1,9 @@
 # Overview
-CamThink AI Workspace is an end-to-end edge-AI toolkit for NeoEyes NE301 (and similar) devices, covering data collection, labeling, training, quantization, and deployment. It can be self-hosted and continuously updated.
+AI Tool Stack is an end-to-end edge-AI toolkit for NeoEyes NE301 (and similar) devices, covering data collection, labeling, training, quantization, and deployment. It can be self-hosted and continuously updated.
+
+![Dashboard](img/dashboard.png)
+![AI Model Project](img/ai-model-project.png)
+![Annotation Workbench](img/Annotation%20tool.png)
 
 ## Key Features
 - Data ingest & management: MQTT image ingest; project/image lists.
