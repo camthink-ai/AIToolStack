@@ -33,14 +33,16 @@ class BuiltinMQTTBroker:
                     'listeners': {
                         'default': {
                             'type': 'tcp',
-                            'bind': '0.0.0.0',
+                            'bind': '0.0.0.0',  # 绑定所有接口，允许容器内外连接
                             'port': settings.MQTT_BUILTIN_PORT,
+                            'max-connections': 100,  # 增加最大连接数
                         },
                     },
                     'sys_interval': 10,
                     'auth': {
                         'allow-anonymous': True,  # 允许匿名连接
                     },
+                    'keepalive-timeout': 300,  # 增加keepalive超时时间（秒）
                 }
                 
                 # 创建并启动 Broker

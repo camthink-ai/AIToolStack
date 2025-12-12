@@ -1,125 +1,101 @@
-# NeoEyesTool - 图像标注工具与 IoT 集成系统
+# Overview
+NeoEyesTool is an end-to-end edge-AI toolkit for NeoEyes NE301 (and similar) devices, covering data collection, labeling, training, quantization, and deployment. It can be self-hosted and continuously updated.
 
-一个支持 IoT 设备实时图像上传的现代化图像标注工具，专为 YOLO 训练数据准备而设计。
+## Key Features
+- Data ingest & management: MQTT image ingest; project/image lists.
+- Annotation workbench: shortcut-driven labeling, class management, dataset import/export (COCO / YOLO / project ZIP), annotation history.
+- Training & testing: YOLO-based training and model testing.
+- Quantization & deployment: one-click NE301 model package export.
+- Export: YOLO training dataset, full annotation ZIP.
 
-## 功能特性
+## Requirements
+- Docker & docker-compose (required)：(Optionally) If you need to generate the NE301 quantization model package, please pull the image in advance: 
+  ```
+  docker pull camthink/ne301-dev:latest
+  ```
 
-### 标注工作台
-- **三栏式布局**：工具栏 + 画布区 + 控制面板
-- **多种标注工具**：矩形框、多边形、关键点
-- **高效交互**：键盘快捷键、鼠标操作优化
-- **实时预览**：十字准星、拖拽预览、视觉反馈
-
-### IoT 集成
-- **MQTT 通信**：支持设备端实时上传图像
-- **自动入库**：接收后自动存储并标记状态
-- **实时通知**：WebSocket 推送新图像到达
-
-### 数据导出
-- **YOLO 格式**：标准 YOLOv5/v8/v10/v11 格式
-- **精确转换**：归一化坐标，支持检测和分割任务
-- **批量导出**：支持项目级别批量导出
-
-## 技术栈
-
-- **后端**：Python + FastAPI + SQLite
-- **前端**：React + TypeScript + Canvas API
-- **通信**：MQTT (paho-mqtt) + WebSocket
-- **存储**：文件系统 + SQLite 数据库
-
-## 项目结构
-
-```
-NeoEyesTool/
-├── backend/              # 后端服务
-│   ├── api/             # API 路由
-│   ├── mqtt/            # MQTT 订阅服务
-│   ├── models/          # 数据模型
-│   ├── services/        # 业务逻辑
-│   └── utils/           # 工具函数
-├── frontend/            # 前端应用
-│   ├── src/
-│   │   ├── components/  # React 组件
-│   │   ├── hooks/       # 自定义 Hooks
-│   │   └── utils/       # 工具函数
-│   └── public/
-├── datasets/            # 数据集存储目录
-└── docs/               # 文档
-
-```
-
-## 快速开始
-
-### 环境要求
-
-- Python 3.8+
-- Node.js 16+
-- MQTT Broker (EMQX 或 Mosquitto)
-
-### 安装
-
+## Quick Start (Docker)
 ```bash
-# 后端依赖
-cd backend
-pip install -r requirements.txt
-
-# 前端依赖
-cd frontend
-npm install
+docker-compose build
+docker-compose up
 ```
+The frontend is built in-container (react-scripts) and the backend is FastAPI. Check container logs for the exposed frontend URL (usually http://localhost:8000 or mapped port).
 
-### 配置
-
-1. 配置 MQTT Broker 地址（`backend/config.py`）
-2. 配置数据库路径（`backend/config.py`）
-
-### 运行
-
+### Local Development (optional)
+Run frontend and backend separately:
 ```bash
-# 启动后端服务
-cd backend
-python main.py
-
-# 启动前端开发服务器
-cd frontend
-npm start
+cd frontend && npm install && npm start
+cd backend  && pip install -r requirements.txt && uvicorn main:app --reload
 ```
+API routes live in `backend/api/routes.py`. Frontend config is in `frontend/src/config.ts`.
 
-## 使用说明
+## Typical Workflow
+1. Create a project  
+2. Configure NE301 MQTT (server + topic)  
+3. Capture images (or upload manually)  
+4. Label images and manage classes  
+5. Train a model  
+6. Quantize to NE301 package  
+7. Deploy to NE301
 
-### MQTT 上传图像
+## Data Import / Export
+- Import: COCO (.json), YOLO (.zip), project export ZIP (images/ + annotations/ + classes.json)
+- Export: YOLO dataset, full annotation ZIP
 
-发布消息到 Topic: `annotator/upload/{project_id}`
+## Keyboard Shortcuts (common)
+- Navigate images: A / ←, D / →  
+- Tools: R rectangle, P polygon, V select  
+- Class select: 1–9 for first 9 classes  
+- Toggle annotations: H  
+- Undo/Redo: Ctrl/Cmd + Z, Ctrl/Cmd + Shift + Z  
+- Save: Ctrl/Cmd + S
 
-```json
-{
-  "req_id": "uuid_v4_string",
-  "device_id": "camera_01",
-  "timestamp": 1717488000,
-  "image": {
-    "filename": "img_20240604_001.jpg",
-    "format": "jpg",
-    "encoding": "base64",
-    "data": "base64_encoded_string"
-  }
-}
-```
+## Roadmap
+- Model hub: standalone quantization and downloadable model library
+- Device management: NE101/NE301 connection, data debugging, OTA
 
-### 快捷键
+## Ports & Environment
+- Default ports (docker-compose):  
+  - Backend / API: `8000`  
+  - Frontend (react-scripts in container): `3000` (proxied/mapped, check logs)  
+- Key environment variables (examples):  
+  - `API_BASE_URL`: frontend API base (e.g., `http://localhost:8000`)  
+  - `MQTT_BROKER_HOST`: MQTT broker host/IP (e.g., `localhost` or broker service name in compose)  
+  - `MQTT_BROKER`, `MQTT_TOPIC`: NE301 MQTT settings（若后端/前端共用，MQTT_BROKER 可与 MQTT_BROKER_HOST 保持一致，或在 compose 里指向 broker 容器名）  
+  - `DATASETS_ROOT`: backend dataset storage path  
+  - Add more as needed in `.env` or compose env overrides.
 
-- `R`: 矩形框工具
-- `P`: 多边形工具
-- `V`: 选择/移动工具
-- `A` / `←`: 上一张图片
-- `D` / `→`: 下一张图片
-- `Space + 拖拽`: 平移画布
-- `Del`: 删除选中标注
-- `Ctrl+Z`: 撤销
-- `Ctrl+Shift+Z`: 重做
-- `H`: 隐藏/显示标注
-- `1-9`: 快速切换类别
+## Dataset Formats (import/export)
+- COCO: single JSON with `images/annotations/categories`.  
+- YOLO: ZIP with `images/` + `labels/` (.txt).  
+- Project ZIP: `images/` + `annotations/*.json` + optional `classes.json` (id/name/color).  
+- Exports: YOLO dataset ZIP; full annotation ZIP (images + annotations + classes.json).
+
+## Troubleshooting
+- Build fails (frontend) missing assets: ensure all referenced CSS/TSX exist (`DatasetImportModal.css` etc.).  
+- Port conflicts: adjust mapped ports in `docker-compose.yml`.  
+- Slow annotation layer on fast navigation: caching added; still slow → reduce image size (JPEG/WebP) or check network/CPU.
+
+## Testing
+- If tests exist: run frontend lint/tests via `npm test` or backend tests via `pytest` (add when available).  
+- If absent: mark as TODO in issues; manual smoke: load project, navigate images, import/export datasets, train/quantize happy-path.
+
+## Contributing
+- Issues & PRs welcome.  
+- Style: follow repo defaults (eslint/prettier for frontend, black/flake8 if configured for backend).  
+- Branching: fork & PR or feature branches; please keep changes scoped and include repro steps for bug fixes.
+
+## Security
+- Do not commit secrets/tokens.  
+- For security reports, contact maintainer privately (add email/contact here).
 
 ## License
+- Add your license of choice (e.g., MIT/Apache-2.0). Add `LICENSE` file and reference it here.
 
-MIT
+
+
+
+
+
+
 

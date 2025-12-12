@@ -6,9 +6,10 @@ import { ControlPanel } from './ControlPanel';
 import { ShortcutHelper } from './ShortcutHelper';
 import { MQTTGuide } from './MQTTGuide';
 import { TrainingPanel } from './TrainingPanel';
+import { DatasetImportModal } from './DatasetImportModal';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { API_BASE_URL } from '../config';
-import { IoArrowBack, IoDownload, IoChevronDown } from 'react-icons/io5';
+import { IoArrowBack, IoDownload, IoChevronDown, IoCloudUpload } from 'react-icons/io5';
 import './AnnotationWorkbench.css';
 
 // 图标组件包装器，解决 TypeScript 类型问题
@@ -74,7 +75,10 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showTrainingPanel, setShowTrainingPanel] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
+  const annotationCacheRef = React.useRef<Record<number, Annotation[]>>({});
+  const annotationsAbortRef = React.useRef<AbortController | null>(null);
 
   // 点击外部关闭下拉菜单
   useEffect(() => {
@@ -150,11 +154,32 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
 
     const imageId = images[currentImageIndex].id;
     
-    // 立即清空旧标注，避免显示上一个图像的标注
-    setAnnotations([]);
+    // 尝试使用缓存，提升切换速度
+    const cached = annotationCacheRef.current[imageId];
+    if (cached) {
+      setAnnotations(cached);
+      setHistory([cached]);
+      setHistoryIndex(0);
+      setSelectedAnnotationId(null);
+    } else {
+      // 无缓存时清空，避免显示上一个图像的标注
+      setAnnotations([]);
+      setHistory([[]]);
+      setHistoryIndex(0);
+      setSelectedAnnotationId(null);
+    }
+
+    // 取消上一请求
+    if (annotationsAbortRef.current) {
+      annotationsAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    annotationsAbortRef.current = controller;
     
     try {
-      const response = await fetch(`${API_BASE_URL}/projects/${project.id}/images/${imageId}`);
+      const response = await fetch(`${API_BASE_URL}/projects/${project.id}/images/${imageId}`, {
+        signal: controller.signal
+      });
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -168,6 +193,7 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
 
       // 更新标注列表
       setAnnotations(annotationsList);
+      annotationCacheRef.current[imageId] = annotationsList;
       
       // 取消选中（因为切换了图像）
       setSelectedAnnotationId(null);
@@ -175,7 +201,10 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
       // 重置历史记录为新图像的标注历史
       setHistory([annotationsList]);
       setHistoryIndex(0);
-    } catch (error) {
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        return;
+      }
       console.error('Failed to fetch annotations:', error);
       setAnnotations([]);
       setHistory([[]]);
@@ -226,6 +255,14 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
     fetchAnnotations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentImageIndex, images]);
+
+  // 同步缓存（用户在当前图像操作时，确保缓存也更新）
+  useEffect(() => {
+    const imageId = images[currentImageIndex]?.id;
+    if (imageId) {
+      annotationCacheRef.current[imageId] = annotations;
+    }
+  }, [annotations, currentImageIndex, images]);
 
   // 保存标注
   const saveAnnotations = useCallback(async () => {
@@ -481,6 +518,14 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           
           <button
             className="btn-export"
+            onClick={() => setShowImportModal(true)}
+          >
+            <Icon component={IoCloudUpload} />
+            <span>{t('annotation.importDataset', '导入数据集')}</span>
+          </button>
+          
+          <button
+            className="btn-export"
             onClick={() => {
               if (onOpenTraining) {
                 onOpenTraining(project.id);
@@ -603,6 +648,17 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           onClose={() => setShowTrainingPanel(false)}
         />
       )}
+      
+      <DatasetImportModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        defaultProjectId={project.id}
+        onImportComplete={() => {
+          setShowImportModal(false);
+          fetchImages();
+          fetchClasses();
+        }}
+      />
     </div>
   );
 };

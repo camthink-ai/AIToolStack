@@ -193,6 +193,8 @@ class TrainingService:
         self.training_records: Dict[str, List[Dict]] = {}
         # 当前活动的训练：{project_id: training_id}
         self.active_trainings: Dict[str, str] = {}
+        # 训练线程跟踪：{training_id: thread}
+        self.training_threads: Dict[str, threading.Thread] = {}
         self.training_lock = threading.Lock()
     
     # ========= 数据库相关工具方法 =========
@@ -357,14 +359,18 @@ class TrainingService:
             # 持久化到数据库
             self._persist_record(training_info)
             
-            # 在后台线程中启动训练
+            # 在后台线程中启动训练（传递 training_id 用于生成唯一目录名）
             thread = threading.Thread(
                 target=self._run_training,
                 args=(training_id, project_id, dataset_path, training_info, model_size, epochs, imgsz, batch, device,
                       lr0, lrf, optimizer, momentum, weight_decay, patience, workers, val, save_period, amp,
                       hsv_h, hsv_s, hsv_v, degrees, translate, scale, shear, perspective, flipud, fliplr, mosaic, mixup),
-                daemon=True
+                daemon=True,
+                name=f"TrainingThread-{training_id}"
             )
+            # 保存线程引用以便追踪
+            with self.training_lock:
+                self.training_threads[training_id] = thread
             thread.start()
             
             return training_info
@@ -404,6 +410,8 @@ class TrainingService:
         mixup: Optional[float] = None,
     ):
         """在后台线程中运行训练"""
+        record_for_db = None
+        training_success = False
         try:
             if YOLO is None:
                 raise ImportError("ultralytics library is not installed. Please install it with: pip install ultralytics")
@@ -492,6 +500,7 @@ class TrainingService:
                     raise
                 
                 # 准备训练参数（按照 ultralytics 文档的方式）
+                # 使用 training_id 生成唯一的训练目录名称，避免多次训练被覆盖
                 train_args = {
                     'data': str(dataset_path / "data.yaml"),
                     'epochs': epochs,
@@ -499,8 +508,8 @@ class TrainingService:
                     'batch': batch,
                     'device': device,
                     'project': str(dataset_path.parent),
-                    'name': f'train_{project_id}',
-                    'exist_ok': True,
+                    'name': f'train_{training_id}',  # 使用 training_id 确保每次训练都有唯一目录
+                    'exist_ok': False,  # 改为 False，因为每次训练应该使用新目录
                 }
                 
                 # 添加可选参数（如果提供）
@@ -563,8 +572,11 @@ class TrainingService:
                 train_args['verbose'] = True
                 results = model.train(**train_args)
                 
+            # 训练成功完成
+            training_success = True
+            results_obj = results  # 保存结果对象，供后续使用
+                
             # 训练完成，更新状态
-            record_for_db = None
             with self.training_lock:
                 # 找到对应的训练记录
                 if project_id in self.training_records:
@@ -574,7 +586,7 @@ class TrainingService:
                             record['end_time'] = datetime.now().isoformat()
                             
                             # 提取更多训练指标
-                            results_dict = results.results_dict
+                            results_dict = results_obj.results_dict
                             record['metrics'] = {
                                 'best_fitness': float(results_dict.get('metrics/fitness(B)', 0)),
                                 'mAP50': float(results_dict.get('metrics/mAP50(B)', 0)),
@@ -589,7 +601,7 @@ class TrainingService:
                                 'val_dfl_loss': float(results_dict.get('val/dfl_loss', 0)),
                             }
                             # 获取保存的模型路径
-                            model_path = results.save_dir / 'weights' / 'best.pt'
+                            model_path = results_obj.save_dir / 'weights' / 'best.pt'
                             if model_path.exists():
                                 record['model_path'] = str(model_path)
                             record_for_db = record
@@ -601,34 +613,63 @@ class TrainingService:
             
             # 同步到数据库
             if record_for_db:
-                self._persist_record(record_for_db)
-                
-                self._add_log(training_id, project_id, "训练完成！")
-                logger.info(f"[Training] Training completed for project {project_id}, training_id: {training_id}")
+                try:
+                    self._persist_record(record_for_db)
+                    self._add_log(training_id, project_id, "训练完成！")
+                    logger.info(f"[Training] Training completed for project {project_id}, training_id: {training_id}")
+                except Exception as persist_error:
+                    logger.error(f"[Training] Failed to persist completed training record: {persist_error}", exc_info=True)
+            
+        except KeyboardInterrupt:
+            # 处理用户中断（Ctrl+C）
+            error_msg = "Training interrupted by user"
+            self._add_log(training_id, project_id, f"训练被用户中断")
+            logger.warning(f"[Training] Training interrupted for project {project_id}, training_id: {training_id}")
+            training_success = False
             
         except Exception as e:
             error_msg = str(e)
-            self._add_log(training_id, project_id, f"训练失败: {error_msg}")
+            try:
+                self._add_log(training_id, project_id, f"训练失败: {error_msg}")
+            except Exception as log_error:
+                logger.error(f"[Training] Failed to add error log: {log_error}")
+            
             logger.error(f"[Training] Training failed for project {project_id}, training_id: {training_id}: {e}", exc_info=True)
+            training_success = False
             
-            record_for_db = None
-            with self.training_lock:
-                # 找到对应的训练记录
-                if project_id in self.training_records:
-                    for record in self.training_records[project_id]:
-                        if record.get('training_id') == training_id:
-                            record['status'] = 'failed'
-                            record['error'] = error_msg
-                            record['end_time'] = datetime.now().isoformat()
-                            record_for_db = record
-                            break
+        finally:
+            # 确保无论成功还是失败，都要更新状态和清除活动标记
+            if not training_success:
+                # 如果训练没有成功，确保状态被更新为失败
+                with self.training_lock:
+                    record_for_db = None
+                    # 找到对应的训练记录
+                    if project_id in self.training_records:
+                        for record in self.training_records[project_id]:
+                            if record.get('training_id') == training_id:
+                                # 只有当状态还是running时才更新为failed
+                                if record.get('status') == 'running':
+                                    record['status'] = 'failed'
+                                    record['error'] = error_msg if 'error_msg' in locals() else "Training failed unexpectedly"
+                                    record['end_time'] = datetime.now().isoformat()
+                                    record_for_db = record
+                                break
+                    
+                    # 清除活动训练标记（无论状态如何都要清除）
+                    if project_id in self.active_trainings and self.active_trainings[project_id] == training_id:
+                        del self.active_trainings[project_id]
+                    
+                    # 清除线程跟踪
+                    if training_id in self.training_threads:
+                        del self.training_threads[training_id]
                 
-                # 清除活动训练标记
-                if project_id in self.active_trainings and self.active_trainings[project_id] == training_id:
-                    del self.active_trainings[project_id]
-            
-            if record_for_db:
-                self._persist_record(record_for_db)
+                # 同步到数据库
+                if record_for_db:
+                    try:
+                        self._persist_record(record_for_db)
+                        logger.info(f"[Training] Updated training status to 'failed' for project {project_id}, training_id: {training_id}")
+                    except Exception as persist_error:
+                        logger.error(f"[Training] Failed to persist failed training record: {persist_error}", exc_info=True)
     
     def _add_log(self, training_id: str, project_id: str, message: str):
         """添加日志到训练记录，并写入数据库"""
@@ -741,6 +782,27 @@ class TrainingService:
         with self.training_lock:
             if project_id in self.active_trainings:
                 training_id = self.active_trainings[project_id]
+                # 检查线程是否还在运行
+                thread = self.training_threads.get(training_id)
+                if thread is not None and not thread.is_alive():
+                    # 线程已经结束但状态还是running，说明训练异常终止
+                    for record in self.training_records.get(project_id, []):
+                        if record.get('training_id') == training_id and record.get('status') == 'running':
+                            # 更新状态为失败
+                            record['status'] = 'failed'
+                            record['error'] = "Training thread terminated unexpectedly"
+                            record['end_time'] = datetime.now().isoformat()
+                            try:
+                                self._persist_record(record)
+                                logger.warning(f"[Training] Detected terminated thread for training {training_id}, marked as failed")
+                            except Exception as e:
+                                logger.error(f"[Training] Failed to update terminated training status: {e}")
+                            # 清除活动标记
+                            del self.active_trainings[project_id]
+                            if training_id in self.training_threads:
+                                del self.training_threads[training_id]
+                            break
+                
                 # 返回内存中的记录以保证日志和状态实时
                 for record in self.training_records.get(project_id, []):
                     if record.get('training_id') == training_id:

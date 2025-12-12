@@ -32,7 +32,7 @@ services:
       - MQTT_BUILTIN_PORT=1883
       # MQTT Broker 对外显示的地址（建议设置为服务器的真实 IP 地址）
       # 如果不设置，系统会尝试自动检测，但在 Docker 环境中可能不准确
-      - MQTT_BROKER_HOST=192.168.110.109
+      - MQTT_BROKER_HOST=192.168.110.105
       # 数据库配置
       - DATABASE_URL=sqlite:////app/backend/data/annotator.db
       # 文件存储配置

@@ -54,7 +54,8 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgthread-2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && update-ca-certificates
 
 # 安装 Docker CLI（用于在容器内执行 docker 命令）
 # 注意：此安装需要访问 Docker 官方源，如果网络有问题可能需要配置镜像

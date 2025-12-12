@@ -9,28 +9,37 @@
   gap: 20px;
 }
 
-/* 顶部横幅 */
-.dashboard-hero {
-  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
-  border-radius: 8px;
-  padding: 24px 32px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  flex-shrink: 0;
-}
-
-.dashboard-hero-content {
+/* 工作流程部分 - 整合后的样式 */
+.workflow-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 24px;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.dashboard-hero-left {
+.workflow-header-left {
   flex: 1;
 }
 
-.dashboard-title {
+.workflow-header-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+  min-width: 200px;
+}
+
+.workflow-header-buttons .dashboard-cta-btn,
+.workflow-header-buttons .dashboard-device-btn {
+  width: 100%;
+  min-width: 200px;
+  font-size: var(--btn-font-size);
+}
+
+.workflow-main-title {
   font-size: 28px;
   font-weight: 700;
   color: var(--text-primary);
@@ -38,20 +47,39 @@
   line-height: 1.3;
 }
 
-.dashboard-subtitle {
+.workflow-main-subtitle {
   font-size: 14px;
   color: var(--text-secondary);
-  margin: 0 0 16px 0;
+  margin: 0;
   line-height: 1.5;
+}
+
+.workflow-steps-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.workflow-steps-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.workflow-steps-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
 }
 
 .dashboard-cta-btn {
   height: var(--btn-height-lg);
   min-height: var(--btn-height-lg);
+  max-height: var(--btn-height-lg);
   padding: var(--btn-padding-lg);
   background: var(--primary-color);
   color: var(--text-white);
-  border: none;
+  border: 2px solid transparent;
   border-radius: 8px;
   font-size: var(--btn-font-size);
   font-weight: 600;
@@ -62,6 +90,7 @@
   justify-content: center;
   gap: 8px;
   box-shadow: 0 4px 12px rgba(10, 13, 22, 0.2);
+  box-sizing: border-box;
 }
 
 .dashboard-cta-btn:hover {
@@ -70,75 +99,48 @@
   box-shadow: 0 6px 20px rgba(10, 13, 22, 0.3);
 }
 
-.dashboard-hero-right {
-  flex-shrink: 0;
-}
-
-.device-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 16px 24px;
-  background: var(--bg-primary);
+.dashboard-device-btn {
+  height: var(--btn-height-lg);
+  min-height: var(--btn-height-lg);
+  max-height: var(--btn-height-lg);
+  padding: var(--btn-padding-lg);
+  background: transparent;
+  color: var(--primary-color);
+  border: 2px solid var(--primary-color);
   border-radius: 8px;
-  border: 1px solid var(--border-color);
-  min-width: 140px;
-}
-
-.device-icon-wrapper {
-  width: 64px;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, rgba(74, 144, 226, 0.1) 0%, rgba(26, 188, 156, 0.1) 100%);
-  border-radius: 8px;
-  margin-bottom: 8px;
-}
-
-.device-icon {
-  width: 32px;
-  height: 32px;
-  color: var(--accent-color);
-}
-
-.device-label {
-  font-size: 12px;
+  font-size: var(--btn-font-size);
   font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
+
+.dashboard-device-btn:hover {
+  background: var(--primary-color);
+  color: var(--text-white);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(10, 13, 22, 0.3);
+}
+
 
 /* 通用区块样式 */
 .dashboard-section {
   flex-shrink: 0;
 }
 
-.section-header {
-  text-align: center;
-  margin-bottom: 16px;
-}
-
-.section-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0 0 4px 0;
-}
-
-.section-description {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-/* 工作流程 */
+/* 工作流程 - 整合后的样式 */
 .workflow-section {
-  background: var(--bg-primary);
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
   border-radius: 8px;
-  padding: 20px 24px;
+  padding: 24px 32px;
   border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .workflow-container {
@@ -241,6 +243,7 @@
   min-height: calc(1.3em * 2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -254,6 +257,7 @@
   min-height: calc(1.4em * 3);
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -317,20 +321,40 @@
 }
 
 @media (max-width: 768px) {
-  .dashboard-hero {
+  .workflow-section {
     padding: 16px 20px;
   }
 
-  .dashboard-title {
+  .workflow-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+  }
+
+  .workflow-main-title {
     font-size: 22px;
   }
 
-  .dashboard-subtitle {
+  .workflow-main-subtitle {
     font-size: 12px;
   }
 
-  .workflow-section {
-    padding: 16px 20px;
+  .workflow-header-buttons {
+    width: 100%;
+    align-items: stretch;
+    min-width: unset;
+  }
+
+  .workflow-header-buttons .dashboard-cta-btn,
+  .workflow-header-buttons .dashboard-device-btn {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .workflow-steps-header {
+    margin-bottom: 16px;
   }
 
   .workflow-container {
@@ -374,25 +398,5 @@
   .connector-arrow {
     width: 14px;
     height: 14px;
-  }
-
-
-  .device-preview {
-    padding: 12px 16px;
-    min-width: 100px;
-  }
-
-  .device-icon-wrapper {
-    width: 48px;
-    height: 48px;
-  }
-
-  .device-icon {
-    width: 24px;
-    height: 24px;
-  }
-
-  .device-label {
-    font-size: 10px;
   }
 }

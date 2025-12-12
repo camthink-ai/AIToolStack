@@ -21,12 +21,14 @@ class MQTTService:
     def __init__(self):
         self.client: Optional[mqtt.Client] = None
         self.is_connected = False
+        self.broker_host = ""  # 保存当前连接的broker地址
+        self.broker_port = 0
     
     def on_connect(self, client, userdata, flags, rc):
         """连接回调"""
         if rc == 0:
             self.is_connected = True
-            print(f"[MQTT] Connected to broker at {settings.MQTT_BROKER}:{settings.MQTT_PORT}")
+            print(f"[MQTT] Connected to broker at {self.broker_host}:{self.broker_port}")
             # 订阅上传主题
             client.subscribe(settings.MQTT_UPLOAD_TOPIC, qos=settings.MQTT_QOS)
             print(f"[MQTT] Subscribed to topic: {settings.MQTT_UPLOAD_TOPIC}")
@@ -36,7 +38,13 @@ class MQTTService:
     def on_disconnect(self, client, userdata, rc):
         """断开连接回调"""
         self.is_connected = False
-        print(f"[MQTT] Disconnected from broker")
+        if rc != 0:
+            print(f"[MQTT] Disconnected from broker unexpectedly (rc={rc})")
+        else:
+            print(f"[MQTT] Disconnected from broker")
+        
+        # 如果非正常断开（rc != 0），paho-mqtt会自动尝试重连
+        # 我们不需要手动处理重连逻辑
     
     def on_message(self, client, userdata, msg):
         """消息接收回调"""
@@ -265,10 +273,15 @@ class MQTTService:
         try:
             # 明确指定使用 MQTT 3.1.1 协议（aMQTT broker 不支持 MQTT 5.0）
             # protocol=mqtt.MQTTv311 表示使用 MQTT 3.1.1
+            # 设置clean_session=True确保连接是干净的
             self.client = mqtt.Client(
                 client_id=f"annotator_server_{uuid.uuid4().hex[:8]}",
-                protocol=mqtt.MQTTv311
+                protocol=mqtt.MQTTv311,
+                clean_session=True
             )
+            
+            # 设置连接超时和重试参数
+            self.client.reconnect_delay_set(min_delay=1, max_delay=120)
             
             # 设置回调
             self.client.on_connect = self.on_connect
@@ -277,21 +290,22 @@ class MQTTService:
             
             # 确定要连接的 Broker 地址
             if settings.MQTT_USE_BUILTIN_BROKER:
-                # 内置 Broker 绑定在 0.0.0.0，但客户端连接时使用本机 IP
-                from backend.config import get_local_ip
-                broker_host = get_local_ip()
-                broker_port = settings.MQTT_BUILTIN_PORT
-                print(f"[MQTT] Using built-in MQTT Broker at {broker_host}:{broker_port}")
+                # 内置 Broker 绑定在 0.0.0.0，客户端在同一容器内应该连接 localhost
+                # 这样更可靠，避免容器内部IP导致连接问题
+                self.broker_host = "127.0.0.1"  # 在容器内使用 localhost 连接
+                self.broker_port = settings.MQTT_BUILTIN_PORT
+                print(f"[MQTT] Using built-in MQTT Broker at {self.broker_host}:{self.broker_port}")
             else:
-                broker_host = settings.MQTT_BROKER
-                broker_port = settings.MQTT_PORT
-                print(f"[MQTT] Connecting to external MQTT Broker at {broker_host}:{broker_port}")
+                self.broker_host = settings.MQTT_BROKER
+                self.broker_port = settings.MQTT_PORT
+                print(f"[MQTT] Connecting to external MQTT Broker at {self.broker_host}:{self.broker_port}")
                 # 外部 Broker 才需要认证
                 if settings.MQTT_USERNAME and settings.MQTT_PASSWORD:
                     self.client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
             
             # 连接到 Broker
-            self.client.connect(broker_host, broker_port, keepalive=60)
+            # 增加keepalive时间，减少超时断开的问题
+            self.client.connect(self.broker_host, self.broker_port, keepalive=120)
             self.client.loop_start()
         except ConnectionRefusedError:
             if settings.MQTT_USE_BUILTIN_BROKER:

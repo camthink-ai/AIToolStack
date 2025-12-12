@@ -97,7 +97,8 @@
       "details": "Detection Details",
       "preview": "Preview",
       "detectionResult": "Detection Result",
-      "failed": "Model test failed"
+      "failed": "Model test failed",
+      "noDetections": "No objects detected"
     },
     "learningRate": {
       "title": "Learning Rate Parameters",
@@ -201,6 +202,27 @@
     "confirmClose": "Quantization is in progress. Are you sure you want to close the window? You will not be able to see the progress, but the background process will continue."
   },
   "annotation": {
+    "import": {
+      "title": "Import Dataset",
+      "selectProject": "Select Project",
+      "selectProjectPlaceholder": "Please select a project to import data",
+      "selectProjectFirst": "Please select a project first",
+      "selectFormat": "Select Import Format",
+      "formatImages": "Image Files",
+      "formatCOCO": "COCO Format (JSON)",
+      "formatYOLO": "YOLO Format (ZIP/Directory)",
+      "formatProject": "Project Export ZIP",
+      "selectFiles": "Select Image Files",
+      "selectDatasetFile": "Select Dataset File",
+      "selectFileButton": "Select File",
+      "singleFileRequired": "Please select a single dataset file",
+      "hintImages": "Support batch upload of multiple images (JPG, PNG, BMP, GIF, WEBP)",
+      "hintCOCO": "Upload COCO format JSON file (containing images, annotations, categories)",
+      "hintYOLO": "Upload YOLO format ZIP file (containing images/ and labels/)",
+      "hintProject": "Upload project export ZIP (containing images/ and annotations/ JSON)",
+      "importSuccess": "Import successful: {{images}} images, {{annotations}} annotations, {{classes}} classes",
+      "importFailed": "Import failed"
+    },
     "toolRectangle": "Rectangle",
     "toolPolygon": "Polygon",
     "toolKeypoint": "Keypoint",
@@ -216,6 +238,7 @@
     "backToProjects": "Back to AI Model Projects",
     "subtitle": "Image Annotation Workbench",
     "trainModel": "Train Model",
+    "importDataset": "Import Dataset",
     "exportDataset": "Export Dataset",
     "exporting": "Exporting...",
     "exportYOLO": "Export YOLO Training Dataset",
@@ -266,6 +289,7 @@
     "title": "AI Model Project Workflow",
     "subtitle": "Seamless integration with NE301 devices, complete solution from data collection to model deployment",
     "startProject": "Start Creating Project",
+    "getDevice": "Get NeoEyes NE301 AI Camera Device",
     "deviceName": "NE301 Device",
     "extension": "More features coming soon...",
     "workflow": {
@@ -318,6 +342,9 @@
     }
   },
   "shortcuts": {
+    "title": "Shortcuts",
+    "expand": "Expand",
+    "collapse": "Collapse",
     "switchClass": "Quick Switch Class",
     "bboxTool": "Bounding Box Tool",
     "polygonTool": "Polygon Tool",

@@ -68,32 +68,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ onStartProject }) => {
 
   return (
     <div className="dashboard">
-      {/* 顶部横幅 */}
-      <div
-        className="dashboard-hero"
-      >
-        <div className="dashboard-hero-content">
-          <div className="dashboard-hero-left">
-            <h1 className="dashboard-title" >
+      {/* 整合的工作流程部分 */}
+      <div className="dashboard-section workflow-section">
+        <div className="workflow-header">
+          <div className="workflow-header-left">
+            <h1 className="workflow-main-title">
               {t('dashboard.title', 'AI模型项目工作流')}
             </h1>
-            <p className="dashboard-subtitle" >
+            <p className="workflow-main-subtitle">
               {t('dashboard.subtitle', '与NE301设备无缝对接，从数据采集到模型部署的完整解决方案')}
             </p>
+          </div>
+          <div className="workflow-header-buttons">
             {onStartProject && (
-              <button className="dashboard-cta-btn" onClick={onStartProject}>
+              <a
+                className="dashboard-device-btn"
+                onClick={onStartProject}
+                style={{
+                  background: '#111',
+                  color: '#fff',
+                  borderColor: '#111'
+                }}
+              >
                 {t('dashboard.startProject', '开始创建项目')}
-              </button>
+              </a>
             )}
+            <a 
+              href="https://www.camthink.ai/product/neoeyes-301/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="dashboard-device-btn"
+            >
+              {t('dashboard.getDevice', '获取NeoEyes NE301 AI Camera 设备')}
+            </a>
           </div>
         </div>
-      </div>
-
-      {/* 工作流程 */}
-      <div className="dashboard-section workflow-section">
-        <div className="section-header">
-          <h2 className="section-title">{t('dashboard.workflow.title', '完整工作流程')}</h2>
-          <p className="section-description">
+        <div className="workflow-steps-header">
+          <h2 className="workflow-steps-title">{t('dashboard.workflow.title', '完整工作流程')}</h2>
+          <p className="workflow-steps-description">
             {t('dashboard.workflow.description', '从设备采集到模型部署的六个关键步骤')}
           </p>
         </div>

@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: 999; /* 低于顶部导航栏(1000)，但高于标注界面内容 */
 }
 
 .training-panel-fullscreen {
@@ -43,10 +43,8 @@
 .close-btn {
   background: transparent;
   border: none;
-  font-size: 24px;
   color: var(--text-light);
   cursor: pointer;
-  padding: 4px;
   width: 32px;
   height: 32px;
   display: flex;
@@ -54,6 +52,12 @@
   justify-content: center;
   border-radius: 4px;
   transition: all 0.2s;
+}
+
+.close-btn svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 .close-btn:hover {
@@ -686,7 +690,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10001;
+  z-index: 999; /* 低于顶部导航栏(1000)，确保不遮挡导航栏和语言切换器 */
 }
 
 .config-modal {
@@ -1077,6 +1081,13 @@
   border-radius: 4px;
   font-size: 13px;
   transition: all 0.2s;
+}
+
+.detection-item.no-detections {
+  justify-content: center;
+  color: var(--text-light);
+  font-style: italic;
+  padding: 16px;
 }
 
 .detection-item:hover {

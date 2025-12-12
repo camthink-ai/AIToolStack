@@ -155,18 +155,18 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
             </div>
           </div>
         </div>
-        {projects.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon"><Icon component={IoFolder} /></div>
+            {projects.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon"><Icon component={IoFolder} /></div>
             <p>{t('project.noProjects')}</p>
-            <button 
-              onClick={() => setShowCreateModal(true)} 
-              className="btn-primary"
-            >
+                <button 
+                  onClick={() => setShowCreateModal(true)} 
+                  className="btn-primary"
+                >
               {t('project.create')}
-            </button>
-          </div>
-        ) : (
+                </button>
+              </div>
+            ) : (
           <div className="project-list-section">
             <div className="project-grid">
               {projects.map((project) => (

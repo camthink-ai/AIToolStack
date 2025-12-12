@@ -20,10 +20,12 @@ from backend.services.websocket_manager import websocket_manager
 from backend.services.mqtt_service import mqtt_service
 from backend.services.training_service import training_service
 from backend.utils.yolo_export import YOLOExporter
+from backend.utils.dataset_import import DatasetImporter, generate_color
 from backend.config import settings
 from PIL import Image as PILImage
 import io
 import logging
+import tempfile
 
 
 router = APIRouter()
@@ -545,6 +547,298 @@ def delete_annotation(annotation_id: int, db: Session = Depends(get_db)):
         })
     
     return {"message": "Annotation deleted"}
+
+
+# ========== 数据集导入相关 ==========
+
+@router.post("/projects/{project_id}/dataset/import")
+async def import_dataset(
+    project_id: str,
+    file: UploadFile = File(...),
+    format_type: str = Query(..., description="Dataset format: 'coco', 'yolo' or 'project_zip'"),
+    db: Session = Depends(get_db)
+):
+    """Import dataset in COCO / YOLO format or project exported ZIP"""
+    # Verify project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if format_type not in ['coco', 'yolo', 'project_zip']:
+        raise HTTPException(status_code=400, detail=f"Unsupported format type: {format_type}. Supported: 'coco', 'yolo', 'project_zip'")
+    
+    temp_file = None
+    temp_dir = None
+    try:
+        # Save uploaded file to temp location
+        file_ext = Path(file.filename).suffix.lower() if file.filename else ''
+        temp_file = Path(tempfile.mkdtemp()) / f"dataset{file_ext}"
+        temp_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        file_content = await file.read()
+        temp_file.write_bytes(file_content)
+        
+        # Parse dataset
+        if format_type == 'coco':
+            dataset_data = DatasetImporter.import_dataset(project_id, temp_file, 'coco')
+        elif format_type == 'yolo':
+            dataset_data = DatasetImporter.import_dataset(project_id, temp_file, 'yolo')
+        elif format_type == 'project_zip':
+            temp_dir = Path(tempfile.mkdtemp())
+            try:
+                with zipfile.ZipFile(temp_file, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to unzip project package: {str(e)}")
+
+            classes_file = temp_dir / "classes.json"
+            classes_data = []
+            class_id_map = {}
+            if classes_file.exists():
+                try:
+                    classes_json = json.loads(classes_file.read_text())
+                    classes_data = classes_json.get("classes", [])
+                    for cls in classes_data:
+                        if "id" in cls:
+                            class_id_map[cls["id"]] = cls
+                except Exception as e:
+                    logger.warning(f"[Dataset Import] Failed to parse classes.json: {e}")
+
+            images_dir = temp_dir / "images"
+            if not images_dir.exists():
+                images_dir = temp_dir
+
+            annotations_dir = temp_dir / "annotations"
+
+            categories = []
+            category_name_set = set()
+            images_data = []
+
+            def ensure_category(cat_name: str, cat_color: str = None):
+                if cat_name and cat_name not in category_name_set:
+                    category_name_set.add(cat_name)
+                    categories.append({
+                        "id": len(categories) + 1,
+                        "name": cat_name,
+                        "color": cat_color
+                    })
+
+            # Preload categories from classes.json
+            for cls in classes_data:
+                name = cls.get("name")
+                if name:
+                    ensure_category(name, cls.get("color"))
+
+            allowed_exts = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}
+            for img_path in images_dir.rglob("*"):
+                if not img_path.is_file() or img_path.suffix.lower() not in allowed_exts:
+                    continue
+
+                try:
+                    with PILImage.open(img_path) as im:
+                        img_width, img_height = im.size
+                except Exception as e:
+                    logger.warning(f"[Dataset Import] Failed to read image size for {img_path}: {e}")
+                    continue
+
+                ann_list = []
+                ann_path = annotations_dir / f"{img_path.stem}.json"
+                if ann_path.exists():
+                    try:
+                        ann_json = json.loads(ann_path.read_text())
+                        if isinstance(ann_json, list):
+                            for ann in ann_json:
+                                cat_name = ann.get("class_name") or ann.get("category_name")
+                                if not cat_name:
+                                    cat_id = ann.get("class_id") or ann.get("category_id")
+                                    if cat_id in class_id_map:
+                                        cat_name = class_id_map[cat_id].get("name")
+                                if not cat_name:
+                                    continue
+                                ensure_category(cat_name)
+                                ann_list.append({
+                                    "category_name": cat_name,
+                                    "type": ann.get("type", "bbox"),
+                                    "data": ann.get("data", {})
+                                })
+                    except Exception as e:
+                        logger.warning(f"[Dataset Import] Failed to parse annotations for {img_path.name}: {e}")
+
+                images_data.append({
+                    "file_name": img_path.name,
+                    "width": img_width,
+                    "height": img_height,
+                    "annotations": ann_list
+                })
+
+            dataset_data = {
+                "categories": categories,
+                "images": images_data,
+                "images_dir": str(images_dir)
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {format_type}")
+        
+        # Get or create classes
+        existing_classes = {cls.name: cls for cls in db.query(Class).filter(Class.project_id == project_id).all()}
+        class_name_to_id = {name: cls.id for name, cls in existing_classes.items()}
+        
+        categories = dataset_data.get("categories", [])
+        classes_created = 0
+        
+        for cat in categories:
+            cat_name = cat["name"]
+            if cat_name not in class_name_to_id:
+                # Create new class
+                color = cat.get("color") or generate_color(len(class_name_to_id))
+                db_class = Class(
+                    project_id=project_id,
+                    name=cat_name,
+                    color=color
+                )
+                db.add(db_class)
+                db.flush()  # Get the ID
+                class_name_to_id[cat_name] = db_class.id
+                existing_classes[cat_name] = db_class
+                classes_created += 1
+        
+        db.commit()
+        
+        # Import images and annotations
+        images_dir = Path(dataset_data.get("images_dir", ""))
+        images_data = dataset_data.get("images", [])
+        project_dir = settings.DATASETS_ROOT / project_id / "raw"
+        project_dir.mkdir(parents=True, exist_ok=True)
+        
+        images_imported = 0
+        annotations_imported = 0
+        errors = []
+        
+        for img_data in images_data:
+            try:
+                img_filename = img_data["file_name"]
+                img_width = img_data["width"]
+                img_height = img_data["height"]
+                
+                # Find image file
+                if images_dir and Path(images_dir).exists():
+                    img_path = Path(images_dir) / img_filename
+                else:
+                    # Try to find in temp directory
+                    img_path = temp_file.parent / img_filename
+                    if not img_path.exists():
+                        # Try various subdirectories
+                        for subdir in ["images", "train/images", "val/images", "test/images"]:
+                            potential_path = temp_file.parent / subdir / img_filename
+                            if potential_path.exists():
+                                img_path = potential_path
+                                break
+                
+                if not img_path.exists():
+                    errors.append(f"Image file not found: {img_filename}")
+                    continue
+                
+                # Copy image to project directory
+                file_ext = img_path.suffix
+                filename_stem = f"img_{uuid.uuid4().hex[:8]}"
+                filename = f"{filename_stem}{file_ext}"
+                dest_path = project_dir / filename
+                
+                # Handle filename conflicts
+                counter = 0
+                while dest_path.exists():
+                    counter += 1
+                    filename = f"{filename_stem}_{counter}{file_ext}"
+                    dest_path = project_dir / filename
+                
+                # Copy file
+                shutil.copy2(img_path, dest_path)
+                
+                relative_path = f"raw/{filename}"
+                
+                # Create image record
+                db_image = Image(
+                    project_id=project_id,
+                    filename=img_filename,  # Original filename
+                    path=relative_path,
+                    width=img_width,
+                    height=img_height,
+                    status="LABELED" if img_data.get("annotations") else "UNLABELED",
+                    source="DATASET_IMPORT"
+                )
+                db.add(db_image)
+                db.flush()  # Get the ID
+                
+                images_imported += 1
+                
+                # Create annotations
+                annotations_data = img_data.get("annotations", [])
+                for ann_data in annotations_data:
+                    cat_name = ann_data.get("category_name")
+                    if cat_name not in class_name_to_id:
+                        errors.append(f"Category not found: {cat_name} for image {img_filename}")
+                        continue
+                    
+                    class_id = class_name_to_id[cat_name]
+                    annotation_type = ann_data.get("type", "bbox")
+                    annotation_data = ann_data.get("data", {})
+                    
+                    db_annotation = Annotation(
+                        image_id=db_image.id,
+                        class_id=class_id,
+                        type=annotation_type,
+                        data=json.dumps(annotation_data)
+                    )
+                    db.add(db_annotation)
+                    annotations_imported += 1
+                
+            except Exception as e:
+                errors.append(f"Failed to import image {img_data.get('file_name', 'unknown')}: {str(e)}")
+                logger.error(f"[Dataset Import] Failed to import image: {e}", exc_info=True)
+        
+        db.commit()
+        
+        # Notify frontend via WebSocket
+        websocket_manager.broadcast_project_update(project_id, {
+            "type": "dataset_imported",
+            "images_count": images_imported,
+            "annotations_count": annotations_imported,
+            "classes_created": classes_created
+        })
+        
+        result = {
+            "message": "Dataset imported successfully",
+            "images_imported": images_imported,
+            "annotations_imported": annotations_imported,
+            "classes_created": classes_created,
+            "errors": errors[:10] if errors else []  # Limit errors to first 10
+        }
+        
+        if errors:
+            result["error_count"] = len(errors)
+        
+        return result
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[Dataset Import] Import failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
+    finally:
+        # Cleanup temp files
+        if temp_file and temp_file.exists():
+            try:
+                if temp_file.is_file():
+                    temp_file.unlink()
+                elif temp_file.is_dir():
+                    shutil.rmtree(temp_file, ignore_errors=True)
+            except Exception:
+                pass
+        if temp_dir and Path(temp_dir).exists():
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
 
 
 # ========== WebSocket ==========
@@ -1085,7 +1379,7 @@ def export_tflite_model(
                 reverse=True,
             )
             if not tflites:
-                logger.error("[NE301] quantized_models 目录下未找到 tflite: %s", export_dir)
+                logger.error("[NE301] No TFLite file found in quantized_models directory: %s", export_dir)
                 raise HTTPException(
                     status_code=500,
                     detail="NE301 量化完成但未找到生成的 tflite 文件",
@@ -1095,7 +1389,7 @@ def export_tflite_model(
 
             # 验证文件是否真的存在
             if not Path(ne301_path).exists():
-                logger.error(f"[NE301] TFLite 文件不存在: {ne301_path}")
+                logger.error(f"[NE301] TFLite file does not exist: {ne301_path}")
                 raise HTTPException(status_code=500, detail=f"NE301 TFLite 文件生成失败: {ne301_path}")
 
         # 如果需要生成 NE301 JSON 配置和编译，先确保 JSON 文件保存（即使编译失败也要保存）
@@ -1154,7 +1448,7 @@ def export_tflite_model(
                 
                 # 验证文件是否真的保存成功
                 if not json_file_path.exists():
-                    logger.error(f"[NE301] JSON 文件保存失败: {json_file_path}")
+                    logger.error(f"[NE301] Failed to save JSON file: {json_file_path}")
                     raise RuntimeError(f"JSON 配置文件保存失败: {json_file_path}")
                 
                 # 保存 JSON 路径（在外部作用域中，确保即使后续步骤失败也能返回）
@@ -1166,15 +1460,15 @@ def export_tflite_model(
                 json_config_saved = json_config
                 
             except Exception as e:
-                logger.error(f"[NE301] JSON 配置文件生成失败: {e}", exc_info=True)
-                print(f"[NE301] JSON 配置文件生成失败: {e}")
+                logger.error(f"[NE301] Failed to generate JSON config file: {e}", exc_info=True)
+                print(f"[NE301] Failed to generate JSON config file: {e}")
                 # JSON 生成失败不影响 TFLite 文件的返回
                 json_config_saved = None
                 ne301_json_path = None  # 确保变量被定义，避免后续NameError
             
             # 尝试编译 NE301 模型包（这一步失败不影响文件下载）
-            logger.info("[NE301] 开始编译 NE301 模型包...")
-            print("[NE301] 开始编译 NE301 模型包...")
+            logger.info("[NE301] Starting NE301 model package compilation...")
+            print("[NE301] Starting NE301 model package compilation...")
             try:
                 # 确保 json_config 可用（如果前面的生成失败，尝试从文件读取）
                 json_config_for_copy = json_config_saved if 'json_config_saved' in locals() and json_config_saved is not None else None
@@ -1183,13 +1477,13 @@ def export_tflite_model(
                     if ne301_json_path and Path(ne301_json_path).exists():
                         with open(ne301_json_path, "r", encoding="utf-8") as f:
                             json_config_for_copy = json.load(f)
-                            logger.info(f"[NE301] 从文件读取 JSON 配置: {ne301_json_path}")
-                            print(f"[NE301] 从文件读取 JSON 配置: {ne301_json_path}")
+                            logger.info(f"[NE301] Reading JSON config from file: {ne301_json_path}")
+                            print(f"[NE301] Reading JSON config from file: {ne301_json_path}")
                     else:
                         # 如果 JSON 文件也不存在，跳过编译步骤
-                        logger.warning("[NE301] JSON 配置不可用，跳过编译步骤")
-                        print("[NE301] JSON 配置不可用，跳过编译步骤")
-                        raise RuntimeError("JSON 配置不可用，无法继续编译")
+                        logger.warning("[NE301] JSON config not available, skipping compilation step")
+                        print("[NE301] JSON config not available, skipping compilation step")
+                        raise RuntimeError("JSON config not available, cannot continue compilation")
                 
                 from backend.utils.ne301_export import (
                     copy_model_to_ne301_project,
@@ -1212,13 +1506,13 @@ def export_tflite_model(
                 if not isinstance(ne301_project_path, Path):
                     ne301_project_path = Path(ne301_project_path)
                 
-                logger.info(f"[NE301] 检查 NE301 项目路径: {ne301_project_path}")
-                print(f"[NE301] 检查 NE301 项目路径: {ne301_project_path}")
-                logger.info(f"[NE301] 项目路径存在: {ne301_project_path.exists()}")
-                print(f"[NE301] 项目路径存在: {ne301_project_path.exists()}")
+                logger.info(f"[NE301] Checking NE301 project path: {ne301_project_path}")
+                print(f"[NE301] Checking NE301 project path: {ne301_project_path}")
+                logger.info(f"[NE301] Project path exists: {ne301_project_path.exists()}")
+                print(f"[NE301] Project path exists: {ne301_project_path.exists()}")
                 
                 if not ne301_project_path.exists() or not (ne301_project_path / "Model").exists():
-                    logger.warning(f"[NE301] NE301 项目目录不存在或不完整: {ne301_project_path}，JSON 已保存到: {ne301_json_path}")
+                    logger.warning(f"[NE301] NE301 project directory does not exist or is incomplete: {ne301_project_path}, JSON saved to: {ne301_json_path}")
                     print(f"[NE301] Project directory not found or incomplete: {ne301_project_path}")
                     print(f"[NE301] JSON config has been saved to: {ne301_json_path}")
                     print(f"[NE301] The project should be automatically cloned on startup.")
@@ -1229,12 +1523,12 @@ def export_tflite_model(
                     print(f"  cd {ne301_project_path} && make model")
                     raise FileNotFoundError(f"NE301 项目目录不存在或不完整: {ne301_project_path}")
                 else:
-                    logger.info(f"[NE301] ✓ NE301 项目路径验证通过")
-                    print(f"[NE301] ✓ NE301 项目路径验证通过")
+                    logger.info(f"[NE301] ✓ NE301 project path validation passed")
+                    print(f"[NE301] ✓ NE301 project path validation passed")
                     
                     # 复制模型和 JSON 到 NE301 项目
-                    logger.info(f"[NE301] 开始复制模型文件到 NE301 项目...")
-                    print(f"[NE301] 开始复制模型文件到 NE301 项目...")
+                    logger.info(f"[NE301] Starting to copy model files to NE301 project...")
+                    print(f"[NE301] Starting to copy model files to NE301 project...")
                     tflite_dest, json_dest = copy_model_to_ne301_project(
                         tflite_path=tflite_file,
                         json_config=json_config_for_copy,
@@ -1274,7 +1568,7 @@ def export_tflite_model(
                 # 但已生成的文件（TFLite、JSON）仍然可以下载
                 logger.error(f"[NE301] Model package build failed: {e}", exc_info=True)
                 print(f"[NE301] ✗ Model package build failed: {type(e).__name__}: {e}")
-                print(f"[NE301] 注意：TFLite 和 JSON 文件已生成，可以下载使用")
+                print(f"[NE301] Note: TFLite and JSON files have been generated and are available for download")
                 if ne301_path:
                     print(f"[NE301]   - TFLite: {ne301_path}")
                 if 'ne301_json_path' in locals() and ne301_json_path:
@@ -1301,9 +1595,9 @@ def export_tflite_model(
             if tflite_path_obj.exists():
                 result["ne301_tflite"] = ne301_path
                 file_size = tflite_path_obj.stat().st_size
-                logger.info(f"[NE301] ✓ TFLite 文件已生成并可下载: {ne301_path} (size: {file_size} bytes)")
+                logger.info(f"[NE301] ✓ TFLite file generated and available for download: {ne301_path} (size: {file_size} bytes)")
             else:
-                logger.error(f"[NE301] ✗ TFLite 文件不存在: {ne301_path}")
+                logger.error(f"[NE301] ✗ TFLite file does not exist: {ne301_path}")
                 # 即使文件不存在也返回路径，让前端知道应该在哪里查找
             
             # 验证并添加 JSON 配置文件路径（即使编译失败也应返回）
@@ -1312,9 +1606,9 @@ def export_tflite_model(
                 if json_path_obj.exists():
                     result["ne301_json"] = ne301_json_path
                     file_size = json_path_obj.stat().st_size
-                    logger.info(f"[NE301] ✓ JSON 配置文件已生成并可下载: {ne301_json_path} (size: {file_size} bytes)")
+                    logger.info(f"[NE301] ✓ JSON config file generated and available for download: {ne301_json_path} (size: {file_size} bytes)")
                 else:
-                    logger.error(f"[NE301] ✗ JSON 配置文件不存在: {ne301_json_path}")
+                    logger.error(f"[NE301] ✗ JSON config file does not exist: {ne301_json_path}")
                     # 即使文件不存在也返回路径，让前端知道应该在哪里查找
             
             # 验证并添加编译后的模型包路径（仅当编译成功时）
@@ -1323,27 +1617,71 @@ def export_tflite_model(
                 if bin_path_obj.exists():
                     result["ne301_model_bin"] = ne301_model_bin_path
                     file_size = bin_path_obj.stat().st_size
-                    logger.info(f"[NE301] ✓ 模型包已生成并可下载: {ne301_model_bin_path} (size: {file_size} bytes)")
+                    logger.info(f"[NE301] ✓ Model package generated and available for download: {ne301_model_bin_path} (size: {file_size} bytes)")
                 else:
-                    logger.warning(f"[NE301] ⚠️ 模型包不存在（编译可能失败）: {ne301_model_bin_path}")
+                    logger.warning(f"[NE301] ⚠️ Model package does not exist (compilation may have failed): {ne301_model_bin_path}")
         
         # 验证原始 TFLite 文件
         export_path_obj = Path(export_path)
         if export_path_obj.exists():
             file_size = export_path_obj.stat().st_size
-            logger.info(f"[Export] ✓ 原始 TFLite 文件已生成: {export_path} (size: {file_size} bytes)")
+            logger.info(f"[Export] ✓ Original TFLite file generated: {export_path} (size: {file_size} bytes)")
         else:
-            logger.error(f"[Export] ✗ 原始 TFLite 文件不存在: {export_path}")
+            logger.error(f"[Export] ✗ Original TFLite file does not exist: {export_path}")
         
         return result
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"Ultralytics or TensorFlow not installed: {str(e)}")
+    except ConnectionError as e:
+        # 网络下载失败（通常是 ultralytics 尝试下载校准数据文件时失败）
+        error_msg = str(e)
+        import traceback
+        tb = traceback.format_exc()
+        logger.error("[Export] Network download failed during TFLite export: %s", tb)
+        print(f"[Export] Network download failed: {tb}")
+        
+        # 检查是否是下载校准数据的问题
+        if "calibration_image_sample_data" in error_msg or "Download failure" in error_msg:
+            detail_msg = (
+                "模型量化导出失败：无法从 GitHub 下载校准示例数据。\n\n"
+                "可能的原因：\n"
+                "1. 网络连接问题（SSL/TLS 证书验证失败）\n"
+                "2. GitHub 访问受限\n"
+                "3. 防火墙或代理设置问题\n\n"
+                "解决方案：\n"
+                "1. 检查网络连接和防火墙设置\n"
+                "2. 如果使用代理，请配置代理环境变量（HTTP_PROXY, HTTPS_PROXY）\n"
+                "3. 检查系统 SSL 证书是否最新\n"
+                "4. 尝试在服务器上手动测试访问 GitHub：curl -I https://github.com\n"
+                "5. 如果问题持续，可以尝试在 Docker 容器外运行导出操作\n\n"
+                f"详细错误：{error_msg}"
+            )
+        else:
+            detail_msg = f"网络连接错误：{error_msg}"
+        
+        raise HTTPException(status_code=500, detail=detail_msg)
     except Exception as e:
         try:
             import traceback
             tb = traceback.format_exc()
-            logger.error("[NE301] TFLite export failed: %s", tb)
-            print(f"[NE301] TFLite export failed: {tb}")
+            logger.error("[Export] TFLite export failed: %s", tb)
+            print(f"[Export] TFLite export failed: {tb}")
+            
+            # 检查错误信息中是否包含下载相关的关键词
+            error_msg = str(e)
+            if "Download failure" in error_msg or "curl return value" in error_msg.lower() or "ConnectionError" in str(type(e).__name__):
+                detail_msg = (
+                    "模型量化导出失败：网络下载错误。\n\n"
+                    "可能的原因：\n"
+                    "1. 网络连接问题\n"
+                    "2. SSL/TLS 证书验证失败\n"
+                    "3. GitHub 访问受限\n\n"
+                    "请检查网络连接或联系管理员。\n\n"
+                    f"详细错误：{error_msg}"
+                )
+                raise HTTPException(status_code=500, detail=detail_msg)
+        except HTTPException:
+            raise
         except Exception:
             pass
         raise HTTPException(status_code=500, detail=f"TFLite export failed: {str(e)}")
@@ -1388,18 +1726,18 @@ def download_tflite_export(
     for possible_dir in possible_base_dirs:
         if possible_dir.exists() and (possible_dir / "weights").exists():
             base_dir = possible_dir
-            logger.info(f"[Download] 找到训练目录: {base_dir}")
+            logger.info(f"[Download] Found training directory: {base_dir}")
             break
     
     if not base_dir:
         # 如果都找不到，使用第一个作为默认值（会在后续检查中报错）
         base_dir = possible_base_dirs[0]
-        logger.warning(f"[Download] 未找到训练目录，使用默认路径: {base_dir} (可能不存在)")
-        logger.info(f"[Download] 已尝试的路径: {[str(d) for d in possible_base_dirs]}")
+        logger.warning(f"[Download] Training directory not found, using default path: {base_dir} (may not exist)")
+        logger.info(f"[Download] Tried paths: {[str(d) for d in possible_base_dirs]}")
     
     weights_dir = base_dir / "weights"
     
-    logger.info(f"[Download] 查找文件类型: {file_type}, 基础目录: {base_dir}")
+    logger.info(f"[Download] Searching for file type: {file_type}, base directory: {base_dir}")
     
     file_path = None
     filename = None
@@ -1407,46 +1745,46 @@ def download_tflite_export(
     if file_type == "tflite":
         # 查找最新的 TFLite 文件（Ultralytics 导出的原始 TFLite）
         tflite_files = list(weights_dir.glob("*.tflite"))
-        logger.info(f"[Download] 在 {weights_dir} 找到 {len(tflite_files)} 个 TFLite 文件")
+        logger.info(f"[Download] Found {len(tflite_files)} TFLite files in {weights_dir}")
         if not tflite_files:
             # 也检查 best_saved_model 目录
             saved_model_dir = weights_dir / "best_saved_model"
             if saved_model_dir.exists():
                 tflite_files = list(saved_model_dir.glob("*.tflite"))
-                logger.info(f"[Download] 在 best_saved_model 目录找到 {len(tflite_files)} 个 TFLite 文件")
+                logger.info(f"[Download] Found {len(tflite_files)} TFLite files in best_saved_model directory")
         if not tflite_files:
             raise HTTPException(status_code=404, detail=f"TFLite file not found in {weights_dir}")
         file_path = max(tflite_files, key=lambda p: p.stat().st_mtime)
         filename = file_path.name
-        logger.info(f"[Download] 选择文件: {file_path}")
+        logger.info(f"[Download] Selected file: {file_path}")
     elif file_type == "ne301_tflite":
         # NE301 量化后的 TFLite 文件
         ne301_dir = weights_dir / "ne301_quant" / "quantized_models"
-        logger.info(f"[Download] 查找 NE301 TFLite 文件，目录: {ne301_dir}")
+        logger.info(f"[Download] Searching for NE301 TFLite file, directory: {ne301_dir}")
         if not ne301_dir.exists():
-            logger.error(f"[Download] NE301 目录不存在: {ne301_dir}")
+            logger.error(f"[Download] NE301 directory does not exist: {ne301_dir}")
             raise HTTPException(status_code=404, detail=f"NE301 TFLite directory not found: {ne301_dir}")
         tflite_files = list(ne301_dir.glob("*.tflite"))
-        logger.info(f"[Download] 在 {ne301_dir} 找到 {len(tflite_files)} 个 TFLite 文件: {[f.name for f in tflite_files]}")
+        logger.info(f"[Download] Found {len(tflite_files)} TFLite files in {ne301_dir}: {[f.name for f in tflite_files]}")
         if not tflite_files:
             raise HTTPException(status_code=404, detail=f"NE301 TFLite file not found in {ne301_dir}")
         file_path = max(tflite_files, key=lambda p: p.stat().st_mtime)
         filename = file_path.name
-        logger.info(f"[Download] 选择文件: {file_path}")
+        logger.info(f"[Download] Selected file: {file_path}")
     elif file_type == "ne301_json":
         # NE301 JSON 配置文件
         ne301_dir = weights_dir / "ne301_quant" / "quantized_models"
-        logger.info(f"[Download] 查找 NE301 JSON 文件，目录: {ne301_dir}")
+        logger.info(f"[Download] Searching for NE301 JSON file, directory: {ne301_dir}")
         if not ne301_dir.exists():
-            logger.error(f"[Download] NE301 目录不存在: {ne301_dir}")
+            logger.error(f"[Download] NE301 directory does not exist: {ne301_dir}")
             raise HTTPException(status_code=404, detail=f"NE301 JSON directory not found: {ne301_dir}")
         json_files = list(ne301_dir.glob("*.json"))
-        logger.info(f"[Download] 在 {ne301_dir} 找到 {len(json_files)} 个 JSON 文件: {[f.name for f in json_files]}")
+        logger.info(f"[Download] Found {len(json_files)} JSON files in {ne301_dir}: {[f.name for f in json_files]}")
         if not json_files:
             raise HTTPException(status_code=404, detail=f"NE301 JSON file not found in {ne301_dir}")
         file_path = max(json_files, key=lambda p: p.stat().st_mtime)
         filename = file_path.name
-        logger.info(f"[Download] 选择文件: {file_path}")
+        logger.info(f"[Download] Selected file: {file_path}")
     elif file_type == "ne301_model_bin":
         # NE301 编译后的设备可更新包（优先查找打包后的 _pkg.bin 文件）
         from backend.utils.ne301_init import get_ne301_project_path
@@ -1455,7 +1793,7 @@ def download_tflite_export(
         except Exception:
             ne301_project_path = Path(os.environ.get("NE301_PROJECT_PATH", "/workspace/ne301"))
         
-        logger.info(f"[Download] 查找 NE301 模型包，项目路径: {ne301_project_path}")
+        logger.info(f"[Download] Searching for NE301 model package, project path: {ne301_project_path}")
         
         # 优先查找打包后的设备可更新包（格式：*_v*_pkg.bin）
         build_dir = ne301_project_path / "build"
@@ -1468,7 +1806,7 @@ def download_tflite_export(
                 # 按修改时间排序，选择最新的
                 pkg_files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
                 model_bin_path = pkg_files[0]
-                logger.info(f"[Download] 找到设备可更新包: {model_bin_path}")
+                logger.info(f"[Download] Found device-updatable package: {model_bin_path}")
         
         # 如果没有找到打包文件，尝试查找原始的 .bin 文件
         if not model_bin_path:
@@ -1481,12 +1819,12 @@ def download_tflite_export(
             for path in possible_paths:
                 if path.exists():
                     model_bin_path = path
-                    logger.info(f"[Download] 找到原始模型包（未打包）: {model_bin_path}")
-                    logger.warning(f"[Download] 注意：这是原始的 .bin 文件，不是设备可更新的包格式")
+                    logger.info(f"[Download] Found raw model package (unpackaged): {model_bin_path}")
+                    logger.warning(f"[Download] Note: This is a raw .bin file, not a device-updatable package format")
                     break
         
         if not model_bin_path:
-            logger.error(f"[Download] 模型包未找到，已尝试查找打包文件（*_pkg.bin）和原始文件")
+            logger.error(f"[Download] Model package not found, tried searching for packaged files (*_pkg.bin) and raw files")
             raise HTTPException(status_code=404, detail=f"NE301 model package not found in {build_dir}")
         
         file_path = model_bin_path
@@ -1496,15 +1834,15 @@ def download_tflite_export(
     
     # 最终验证文件是否存在
     if not file_path or not file_path.exists():
-        logger.error(f"[Download] ✗ 文件不存在: {file_path} (file_type: {file_type})")
+        logger.error(f"[Download] ✗ File does not exist: {file_path} (file_type: {file_type})")
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
     
     # 验证文件大小（文件不应该为空）
     file_size = file_path.stat().st_size
     if file_size == 0:
-        logger.warning(f"[Download] ⚠️ 文件大小为 0: {file_path}")
+        logger.warning(f"[Download] ⚠️ File size is 0: {file_path}")
     
-    logger.info(f"[Download] ✓ 文件验证通过，准备下载: {file_path} (size: {file_size} bytes)")
+    logger.info(f"[Download] ✓ File validation passed, ready for download: {file_path} (size: {file_size} bytes)")
     
     # 确定媒体类型
     media_type = 'application/octet-stream'
@@ -1581,30 +1919,35 @@ async def test_model(
         # 获取类别名称（从data.yaml或模型）
         names = result.names if hasattr(result, 'names') else {}
         
-        for box in result.boxes:
-            # 获取边界框坐标
-            xyxy = box.xyxy[0].cpu().numpy()
-            conf_score = float(box.conf[0].cpu().numpy())
-            cls_id = int(box.cls[0].cpu().numpy())
-            cls_name = names.get(cls_id, f"class_{cls_id}")
-            
-            detections.append({
-                "class_id": cls_id,
-                "class_name": cls_name,
-                "confidence": conf_score,
-                "bbox": {
-                    "x1": float(xyxy[0]),
-                    "y1": float(xyxy[1]),
-                    "x2": float(xyxy[2]),
-                    "y2": float(xyxy[3])
-                }
-            })
+        # 检查是否有检测框
+        if hasattr(result, 'boxes') and result.boxes is not None:
+            for box in result.boxes:
+                # 获取边界框坐标
+                xyxy = box.xyxy[0].cpu().numpy()
+                conf_score = float(box.conf[0].cpu().numpy())
+                cls_id = int(box.cls[0].cpu().numpy())
+                cls_name = names.get(cls_id, f"class_{cls_id}")
+                
+                detections.append({
+                    "class_id": cls_id,
+                    "class_name": cls_name,
+                    "confidence": conf_score,
+                    "bbox": {
+                        "x1": float(xyxy[0]),
+                        "y1": float(xyxy[1]),
+                        "x2": float(xyxy[2]),
+                        "y2": float(xyxy[3])
+                    }
+                })
         
         # 调试日志：记录推理输出的概要（同时使用 print 和 logger，避免未配置日志级别时看不到）
+        has_boxes = hasattr(result, 'boxes') and result.boxes is not None
+        boxes_count = len(result.boxes) if has_boxes else 0
         debug_line = (
             f"[TestPredict] project={project_id} training_id={training_id} "
-            f"img={image.width}x{image.height} detections={len(detections)} "
-            f"conf={conf:.3f} iou={iou:.3f} names={list(names.values()) if names else 'N/A'}"
+            f"img={image.width}x{image.height} boxes_count={boxes_count} detections={len(detections)} "
+            f"conf={conf:.3f} iou={iou:.3f} names={list(names.values()) if names else 'N/A'} "
+            f"has_boxes={has_boxes}"
         )
         try:
             logger.info(debug_line)
@@ -1668,22 +2011,8 @@ def get_mqtt_status(request: Request):
         broker_type = "external"
     
     # 获取服务器 IP（用于显示在项目信息中）
+    # get_mqtt_broker_host 已经包含了从请求头获取的逻辑，这里直接使用
     server_ip = get_mqtt_broker_host(request)
-    # 如果获取到的是容器内部 IP 或 localhost，尝试其他方法
-    if server_ip in ["localhost", "127.0.0.1", "0.0.0.0"] or server_ip.startswith("172.17.") or server_ip.startswith("172.18.") or server_ip.startswith("172.19."):
-        # 尝试从请求的 Host 头获取
-        host = request.headers.get("Host", "")
-        if host:
-            host_ip = host.split(":")[0]
-            if host_ip not in ["localhost", "127.0.0.1", "0.0.0.0"]:
-                server_ip = host_ip
-            else:
-                # 如果 Host 头也是 localhost，尝试从 X-Forwarded-Host 获取
-                forwarded_host = request.headers.get("X-Forwarded-Host", "")
-                if forwarded_host:
-                    forwarded_ip = forwarded_host.split(":")[0]
-                    if forwarded_ip not in ["localhost", "127.0.0.1", "0.0.0.0"]:
-                        server_ip = forwarded_ip
     
     return {
         "enabled": settings.MQTT_ENABLED,

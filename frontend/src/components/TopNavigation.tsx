@@ -46,9 +46,6 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ activeMenu, onMenu
         </div>
         <div className="nav-right">
           <LanguageSwitcher />
-          <div className="nav-user">
-            <Icon component={IoPersonCircle} />
-          </div>
         </div>
       </div>
     </div>

@@ -357,10 +357,10 @@ def build_ne301_model(
     
     # 检查 NE301 项目目录
     if not (ne301_project_path / "Model").exists():
-        raise FileNotFoundError(f"NE301 项目目录不存在或缺少 Model 目录: {ne301_project_path}")
+        raise FileNotFoundError(f"NE301 project directory does not exist or Model directory is missing: {ne301_project_path}")
     
     if not (ne301_project_path / "Makefile").exists():
-        raise FileNotFoundError(f"NE301 项目根目录缺少 Makefile: {ne301_project_path}")
+        raise FileNotFoundError(f"NE301 project root directory missing Makefile: {ne301_project_path}")
     
     # 验证模型文件是否存在（在更新 Makefile 之前）
     weights_dir = ne301_project_path / "Model" / "weights"
@@ -369,15 +369,15 @@ def build_ne301_model(
     
     if not expected_tflite.exists():
         raise FileNotFoundError(
-            f"模型文件不存在: {expected_tflite}\n"
-            f"请确保在执行 build_ne301_model 之前已调用 copy_model_to_ne301_project()"
+            f"Model file does not exist: {expected_tflite}\n"
+            f"Please ensure copy_model_to_ne301_project() is called before build_ne301_model()"
         )
     if not expected_json.exists():
         raise FileNotFoundError(
-            f"JSON 配置文件不存在: {expected_json}\n"
-            f"请确保在执行 build_ne301_model 之前已调用 copy_model_to_ne301_project()"
+            f"JSON config file does not exist: {expected_json}\n"
+            f"Please ensure copy_model_to_ne301_project() is called before build_ne301_model()"
         )
-    logger.info(f"验证模型文件存在: {expected_tflite}, {expected_json}")
+    logger.info(f"Verifying model files exist: {expected_tflite}, {expected_json}")
     
     # 更新 Model/Makefile 中的 MODEL_NAME
     model_makefile = ne301_project_path / "Model" / "Makefile"
@@ -442,8 +442,8 @@ def build_ne301_model(
             logger.error(f"Failed to update Model/Makefile: {e}", exc_info=True)
             raise
     else:
-        logger.error(f"Model/Makefile 不存在: {model_makefile}")
-        raise FileNotFoundError(f"Model/Makefile 不存在: {model_makefile}")
+        logger.error(f"Model/Makefile does not exist: {model_makefile}")
+        raise FileNotFoundError(f"Model/Makefile does not exist: {model_makefile}")
     
     if use_docker:
         # 使用 Docker 编译
@@ -490,7 +490,7 @@ def _build_with_docker(
     check_cmd = ["docker", "images", "-q", docker_image]
     result = subprocess.run(check_cmd, capture_output=True, text=True)
     if not result.stdout.strip():
-        logger.warning(f"Docker 镜像 {docker_image} 不存在，尝试拉取...")
+        logger.warning(f"Docker image {docker_image} does not exist, attempting to pull...")
         pull_cmd = ["docker", "pull"]
         if is_arm64:
             # ARM64 架构需要拉取 AMD64 镜像（使用 --platform）
@@ -498,7 +498,7 @@ def _build_with_docker(
         pull_cmd.append(docker_image)
         pull_result = subprocess.run(pull_cmd, capture_output=True, text=True)
         if pull_result.returncode != 0:
-            raise RuntimeError(f"无法拉取 Docker 镜像 {docker_image}: {pull_result.stderr}")
+            raise RuntimeError(f"Failed to pull Docker image {docker_image}: {pull_result.stderr}")
     
     # 构建 Docker 命令
     # 问题：在 Docker-in-Docker 场景中，容器内的路径无法直接挂载到另一个容器
@@ -519,13 +519,13 @@ def _build_with_docker(
         # Docker Desktop 的限制：容器内路径无法直接挂载到另一个容器
         # 解决方案：获取对应的主机路径
         
-        logger.info(f"[NE301] 检测到在容器内运行，开始自动检测主机路径...")
+        logger.info(f"[NE301] Detected running inside container, starting automatic host path detection...")
         
         # 检查是否有工作空间挂载（/workspace/ne301）
         workspace_path = Path("/workspace/ne301")
         mount_path = None
         
-        logger.info(f"[NE301] 检查容器内路径: {workspace_path} (exists: {workspace_path.exists()}, is_dir: {workspace_path.is_dir() if workspace_path.exists() else 'N/A'})")
+        logger.info(f"[NE301] Checking container path: {workspace_path} (exists: {workspace_path.exists()}, is_dir: {workspace_path.is_dir() if workspace_path.exists() else 'N/A'})")
         
         def validate_mount_path(path, strict=True):
             """验证挂载路径是否有效
@@ -560,22 +560,22 @@ def _build_with_docker(
                 # 过滤掉 None 值
                 container_names = [name for name in container_names if name]
                 
-                logger.info(f"[NE301] 尝试通过 Docker inspect 获取主机路径，容器名候选: {container_names}")
+                logger.info(f"[NE301] Attempting to get host path via Docker inspect, container name candidates: {container_names}")
                 
                 for name in container_names:
                     if not name:
                         continue
                     try:
                         inspect_cmd = ["docker", "inspect", name, "--format", "{{json .Mounts}}"]
-                        logger.debug(f"[NE301] 执行命令: {' '.join(inspect_cmd)}")
+                        logger.debug(f"[NE301] Executing command: {' '.join(inspect_cmd)}")
                         result = subprocess.run(inspect_cmd, capture_output=True, text=True, timeout=5)
-                        logger.debug(f"[NE301] Docker inspect 返回码: {result.returncode}")
+                        logger.debug(f"[NE301] Docker inspect return code: {result.returncode}")
                         if result.returncode == 0:
                             all_mounts = json.loads(result.stdout)
-                            logger.info(f"[NE301] 找到 {len(all_mounts)} 个挂载点")
+                            logger.info(f"[NE301] Found {len(all_mounts)} mount points")
                             
                             # 输出所有挂载点信息（用于调试）
-                            logger.info(f"[NE301] 所有挂载点信息：")
+                            logger.info(f"[NE301] All mount point information:")
                             for i, mount in enumerate(all_mounts):
                                 logger.info(f"[NE301]   #{i+1}: {mount.get('Source')} -> {mount.get('Destination')}")
                             
@@ -583,33 +583,33 @@ def _build_with_docker(
                             for mount in all_mounts:
                                 dest = mount.get("Destination")
                                 src = mount.get("Source")
-                                logger.debug(f"[NE301] 检查挂载点: {src} -> {dest}")
+                                logger.debug(f"[NE301] Checking mount point: {src} -> {dest}")
                                 if dest == "/workspace/ne301":
                                     candidate_path = src
-                                    logger.info(f"[NE301] 找到匹配的挂载点: {candidate_path} -> /workspace/ne301")
+                                    logger.info(f"[NE301] Found matching mount point: {candidate_path} -> /workspace/ne301")
                                     # 在容器内验证主机路径时，使用宽松模式（只检查格式，不检查存在性）
                                     if validate_mount_path(candidate_path, strict=False):
                                         mount_path = candidate_path
-                                        logger.info(f"[NE301] ✓ 从 Docker inspect 找到有效主机路径: {mount_path}")
-                                        logger.info(f"[NE301]   注意：主机路径在容器内无法直接验证存在性，将直接使用")
+                                        logger.info(f"[NE301] ✓ Found valid host path from Docker inspect: {mount_path}")
+                                        logger.info(f"[NE301]   Note: Host path cannot be directly verified inside container, will use it directly")
                                         break
                             if mount_path:
                                 break
                         else:
-                            logger.warning(f"[NE301] Docker inspect {name} 失败: returncode={result.returncode}, stderr={result.stderr[:200]}")
+                            logger.warning(f"[NE301] Docker inspect {name} failed: returncode={result.returncode}, stderr={result.stderr[:200]}")
                     except json.JSONDecodeError as e:
-                        logger.warning(f"[NE301] Docker inspect {name} JSON 解析失败: {e}, stdout={result.stdout[:200] if 'result' in locals() else 'N/A'}")
+                        logger.warning(f"[NE301] Docker inspect {name} JSON parse failed: {e}, stdout={result.stdout[:200] if 'result' in locals() else 'N/A'}")
                         continue
                     except Exception as e:
-                        logger.warning(f"[NE301] Docker inspect {name} 执行异常: {type(e).__name__}: {e}")
+                        logger.warning(f"[NE301] Docker inspect {name} execution exception: {type(e).__name__}: {e}")
                         continue
             except Exception as e:
-                logger.warning(f"[NE301] Docker inspect 过程异常: {type(e).__name__}: {e}")
+                logger.warning(f"[NE301] Docker inspect process exception: {type(e).__name__}: {e}")
             
             # 如果未找到 ne301 挂载点，尝试通过其他挂载点推断项目根目录
             if not mount_path:
                 if all_mounts:
-                    logger.info(f"[NE301] 未找到直接的 /workspace/ne301 挂载点，尝试通过其他挂载点推断...")
+                    logger.info(f"[NE301] Direct /workspace/ne301 mount point not found, attempting to infer from other mount points...")
                     try:
                         # 尝试通过 datasets 挂载点推断项目根目录（最可靠的方法）
                         # docker-compose.yml 中: ./datasets:/app/datasets 和 ./ne301:/workspace/ne301
@@ -618,7 +618,7 @@ def _build_with_docker(
                         for mount in all_mounts:
                             if mount.get("Destination") == "/app/datasets":
                                 datasets_host_path = mount.get("Source")
-                                logger.info(f"[NE301] 找到 datasets 挂载点: {datasets_host_path} -> /app/datasets")
+                                logger.info(f"[NE301] Found datasets mount point: {datasets_host_path} -> /app/datasets")
                                 break
                         
                         if datasets_host_path:
@@ -634,24 +634,24 @@ def _build_with_docker(
                                     # 在容器内验证推断的主机路径时，使用宽松模式（只检查格式）
                                     if validate_mount_path(str(inferred_ne301_path), strict=False):
                                         mount_path = str(inferred_ne301_path)
-                                        logger.info(f"[NE301] ✓ 通过 datasets 挂载点推断出主机路径: {mount_path}")
-                                        logger.info(f"[NE301]   项目根目录: {datasets_path.parent}")
-                                        logger.info(f"[NE301]   推断的 ne301 路径: {inferred_ne301_path}")
-                                        logger.info(f"[NE301]   注意：路径推断基于 docker-compose.yml 的挂载配置")
-                                        logger.info(f"[NE301]   注意：主机路径在容器内无法直接验证存在性，将直接使用")
+                                        logger.info(f"[NE301] ✓ Inferred host path from datasets mount point: {mount_path}")
+                                        logger.info(f"[NE301]   Project root directory: {datasets_path.parent}")
+                                        logger.info(f"[NE301]   Inferred ne301 path: {inferred_ne301_path}")
+                                        logger.info(f"[NE301]   Note: Path inference based on docker-compose.yml mount configuration")
+                                        logger.info(f"[NE301]   Note: Host path cannot be directly verified inside container, will use it directly")
                                     else:
-                                        logger.warning(f"[NE301] 推断的路径格式无效: {inferred_ne301_path}")
+                                        logger.warning(f"[NE301] Inferred path format invalid: {inferred_ne301_path}")
                                 else:
-                                    logger.warning(f"[NE301] datasets 路径格式异常（期望目录名为 'datasets'，实际为 '{datasets_path.name}'）")
-                                    logger.warning(f"[NE301] datasets 完整路径: {datasets_host_path}")
+                                    logger.warning(f"[NE301] datasets path format abnormal (expected directory name 'datasets', actual '{datasets_path.name}')")
+                                    logger.warning(f"[NE301] datasets full path: {datasets_host_path}")
                             except Exception as e:
-                                logger.warning(f"[NE301] 解析 datasets 路径失败: {type(e).__name__}: {e}")
+                                logger.warning(f"[NE301] Failed to parse datasets path: {type(e).__name__}: {e}")
                         else:
-                            logger.warning(f"[NE301] 未找到 /app/datasets 挂载点，无法通过 datasets 推断 ne301 路径")
+                            logger.warning(f"[NE301] /app/datasets mount point not found, cannot infer ne301 path from datasets")
                     except Exception as e:
-                        logger.warning(f"[NE301] 通过挂载点推断路径失败: {type(e).__name__}: {e}")
+                        logger.warning(f"[NE301] Failed to infer path from mount points: {type(e).__name__}: {e}")
                 else:
-                    logger.warning(f"[NE301] Docker inspect 未能获取挂载点信息（all_mounts 为 None），无法推断路径")
+                    logger.warning(f"[NE301] Docker inspect failed to get mount point information (all_mounts is None), cannot infer path")
             
             # 如果 Docker inspect 失败，尝试从 /proc/mounts 获取（但需要验证）
             if not mount_path:
@@ -665,16 +665,16 @@ def _build_with_docker(
                                 if container_path == "/workspace/ne301" or container_path == str(workspace_path):
                                     # 跳过明显错误的路径（Docker Desktop 的虚拟路径）
                                     if "/run/host" in host_path or "/tmp" in host_path or not host_path.startswith("/"):
-                                        logger.debug(f"[NE301] 跳过可疑路径: {host_path}")
+                                        logger.debug(f"[NE301] Skipping suspicious path: {host_path}")
                                         continue
                                     # 验证路径格式（使用宽松模式，因为主机路径在容器内无法验证存在性）
                                     if validate_mount_path(host_path, strict=False):
                                         mount_path = host_path
-                                        logger.info(f"[NE301] 从 /proc/mounts 找到有效主机路径: {mount_path}")
-                                        logger.info(f"[NE301]   注意：主机路径在容器内无法直接验证存在性，将直接使用")
+                                        logger.info(f"[NE301] Found valid host path from /proc/mounts: {mount_path}")
+                                        logger.info(f"[NE301]   Note: Host path cannot be directly verified inside container, will use it directly")
                                         break
                 except Exception as e:
-                    logger.warning(f"[NE301] 无法读取 /proc/mounts: {e}")
+                    logger.warning(f"[NE301] Failed to read /proc/mounts: {e}")
         
         # 如果仍然无法获取主机路径，尝试最后的备选方案
         if not mount_path:
@@ -686,41 +686,41 @@ def _build_with_docker(
                     # 验证环境变量路径格式（宽松模式）
                     if validate_mount_path(env_path, strict=False):
                         mount_path = env_path
-                        logger.warning(f"[NE301] ⚠️ 使用环境变量 NE301_HOST_PATH 作为备选方案: {mount_path}")
-                        logger.warning(f"[NE301] 建议：检查为什么自动检测失败，环境变量仅应作为临时解决方案")
+                        logger.warning(f"[NE301] ⚠️ Using environment variable NE301_HOST_PATH as fallback: {mount_path}")
+                        logger.warning(f"[NE301] Recommendation: Check why auto-detection failed, environment variable should only be used as a temporary solution")
                     else:
-                        logger.error(f"[NE301] 环境变量 NE301_HOST_PATH 格式无效: {env_path}")
+                        logger.error(f"[NE301] Environment variable NE301_HOST_PATH format invalid: {env_path}")
             
             if not mount_path:
                 # 最终回退：使用容器路径（会失败，但错误信息会提示用户）
                 mount_path = str(workspace_path.resolve()) if workspace_path.exists() else str(ne301_project_path.resolve())
-                logger.error(f"[NE301] ✗ 无法自动获取主机路径！")
-                logger.error(f"[NE301] 已尝试的方法：")
-                logger.error(f"[NE301]   1. Docker inspect（查找 /workspace/ne301 挂载点）")
-                logger.error(f"[NE301]   2. 通过 datasets 挂载点推断（从 /app/datasets 推断项目根目录）")
-                logger.error(f"[NE301]   3. /proc/mounts 解析")
-                logger.error(f"[NE301]   4. 环境变量 NE301_HOST_PATH（当前值: {os.environ.get('NE301_HOST_PATH', '未设置')}）")
+                logger.error(f"[NE301] ✗ Failed to automatically get host path!")
+                logger.error(f"[NE301] Attempted methods:")
+                logger.error(f"[NE301]   1. Docker inspect (search for /workspace/ne301 mount point)")
+                logger.error(f"[NE301]   2. Infer from datasets mount point (infer project root from /app/datasets)")
+                logger.error(f"[NE301]   3. /proc/mounts parsing")
+                logger.error(f"[NE301]   4. Environment variable NE301_HOST_PATH (current value: {os.environ.get('NE301_HOST_PATH', 'not set')})")
                 logger.error(f"[NE301]")
-                logger.error(f"[NE301] 当前回退路径（可能不正确）: {mount_path}")
-                logger.error(f"[NE301] 这将导致 Docker-in-Docker 挂载失败")
+                logger.error(f"[NE301] Current fallback path (may be incorrect): {mount_path}")
+                logger.error(f"[NE301] This will cause Docker-in-Docker mount to fail")
                 logger.error(f"[NE301]")
-                logger.error(f"[NE301] 临时解决方案：")
-                logger.error(f"[NE301]   在 docker-compose.yml 中设置环境变量 NE301_HOST_PATH")
-                logger.error(f"[NE301]   例如: - NE301_HOST_PATH=/path/to/project/ne301")
+                logger.error(f"[NE301] Temporary solution:")
+                logger.error(f"[NE301]   Set environment variable NE301_HOST_PATH in docker-compose.yml")
+                logger.error(f"[NE301]   Example: - NE301_HOST_PATH=/path/to/project/ne301")
                 logger.error(f"[NE301]")
-                logger.error(f"[NE301] 请检查：")
-                logger.error(f"[NE301]   1. docker-compose.yml 中是否配置了 ./ne301:/workspace/ne301 挂载")
-                logger.error(f"[NE301]   2. docker-compose.yml 中是否配置了 ./datasets:/app/datasets 挂载")
-                logger.error(f"[NE301]   3. Docker socket 权限是否正常（/var/run/docker.sock）")
-                logger.error(f"[NE301]   4. CONTAINER_NAME 环境变量是否正确（当前: {os.environ.get('CONTAINER_NAME', '未设置')}）")
+                logger.error(f"[NE301] Please check:")
+                logger.error(f"[NE301]   1. Is ./ne301:/workspace/ne301 mount configured in docker-compose.yml")
+                logger.error(f"[NE301]   2. Is ./datasets:/app/datasets mount configured in docker-compose.yml")
+                logger.error(f"[NE301]   3. Is Docker socket permission normal (/var/run/docker.sock)")
+                logger.error(f"[NE301]   4. Is CONTAINER_NAME environment variable correct (current: {os.environ.get('CONTAINER_NAME', 'not set')})")
         
         # 挂载主机路径到容器的 /workspace/ne301
         if mount_path:
-            logger.info(f"[NE301] ✓ 最终使用的挂载路径: {mount_path}")
-            logger.info(f"[NE301] 将使用此路径挂载到 ne301-dev 容器: -v {mount_path}:/workspace/ne301")
-            logger.info(f"[NE301] 注意：在容器内无法验证主机路径是否存在，这取决于 Docker 挂载的实际配置")
+            logger.info(f"[NE301] ✓ Final mount path to use: {mount_path}")
+            logger.info(f"[NE301] Will mount this path to ne301-dev container: -v {mount_path}:/workspace/ne301")
+            logger.info(f"[NE301] Note: Cannot verify if host path exists inside container, depends on actual Docker mount configuration")
         else:
-            logger.warning(f"[NE301] ⚠️ 未找到有效的主机路径，将使用容器内路径（可能导致 Docker-in-Docker 挂载失败）")
+            logger.warning(f"[NE301] ⚠️ No valid host path found, will use container path (may cause Docker-in-Docker mount to fail)")
         docker_cmd.extend([
             "-v", f"{mount_path}:/workspace/ne301",
             "-w", "/workspace/ne301",  # 工作目录设为项目根目录
@@ -733,14 +733,14 @@ def _build_with_docker(
             container_tflite = ne301_project_path / "Model" / "weights" / f"{model_name}.tflite"
             container_json = ne301_project_path / "Model" / "weights" / f"{model_name}.json"
             if not container_tflite.exists() or not container_json.exists():
-                logger.error(f"[NE301] 错误：容器内路径中的模型文件不存在")
-                logger.error(f"[NE301] 容器内路径: {container_tflite} (exists: {container_tflite.exists()})")
-                logger.error(f"[NE301] 容器内路径: {container_json} (exists: {container_json.exists()})")
-                logger.error(f"[NE301] 请确保在调用 build_ne301_model 之前已调用 copy_model_to_ne301_project")
+                logger.error(f"[NE301] Error: Model files do not exist in container path")
+                logger.error(f"[NE301] Container path: {container_tflite} (exists: {container_tflite.exists()})")
+                logger.error(f"[NE301] Container path: {container_json} (exists: {container_json.exists()})")
+                logger.error(f"[NE301] Please ensure copy_model_to_ne301_project is called before build_ne301_model")
                 raise FileNotFoundError(
-                    f"模型文件不存在于容器内路径: {container_tflite} 或 {container_json}"
+                    f"Model files do not exist in container path: {container_tflite} or {container_json}"
                 )
-            logger.info(f"[NE301] 验证通过：文件存在于容器内路径")
+            logger.info(f"[NE301] Validation passed: Files exist in container path")
             
             # 如果找到了主机路径，尝试检查主机路径的文件是否存在
             # 由于 bind mount，容器内路径和主机路径应该指向同一位置
@@ -749,10 +749,10 @@ def _build_with_docker(
             if mount_path:
                 # 验证路径格式（宽松模式，因为主机路径在容器内无法验证存在性）
                 if not validate_mount_path(mount_path, strict=False):
-                    logger.warning(f"[NE301] 警告：解析的主机路径格式无效: {mount_path}")
-                    logger.warning(f"[NE301] 将继续尝试使用此路径进行 Docker 挂载")
+                    logger.warning(f"[NE301] Warning: Parsed host path format invalid: {mount_path}")
+                    logger.warning(f"[NE301] Will continue to try using this path for Docker mount")
                 else:
-                    logger.info(f"[NE301] 主机路径格式验证通过: {mount_path}")
+                    logger.info(f"[NE301] Host path format validation passed: {mount_path}")
                 
                 # 尝试访问主机路径（可能失败，但不影响 Docker 挂载）
                 host_tflite = Path(mount_path) / "Model" / "weights" / f"{model_name}.tflite"
@@ -762,45 +762,45 @@ def _build_with_docker(
                 host_weights_dir = Path(mount_path) / "Model" / "weights"
                 try:
                     if not host_weights_dir.exists():
-                        logger.debug(f"[NE301] 主机路径目录在容器内不可见: {host_weights_dir}（这是正常的）")
+                        logger.debug(f"[NE301] Host path directory not visible in container: {host_weights_dir} (this is normal)")
                         # 尝试创建（可能失败，但不影响 Docker 挂载，因为文件已在容器内存在）
                         try:
                             host_weights_dir.mkdir(parents=True, exist_ok=True)
-                            logger.debug(f"[NE301] 已创建主机路径目录（如果可访问）")
+                            logger.debug(f"[NE301] Created host path directory (if accessible)")
                         except Exception as e:
-                            logger.debug(f"[NE301] 无法在容器内创建主机路径目录（这是正常的）: {e}")
+                            logger.debug(f"[NE301] Cannot create host path directory in container (this is normal): {e}")
                     else:
-                        logger.debug(f"[NE301] 主机路径目录在容器内可见: {host_weights_dir}")
+                        logger.debug(f"[NE301] Host path directory visible in container: {host_weights_dir}")
                 except Exception as e:
-                    logger.debug(f"[NE301] 无法访问主机路径目录（这是正常的，容器内可能无法直接访问主机路径）: {e}")
+                    logger.debug(f"[NE301] Cannot access host path directory (this is normal, container may not directly access host path): {e}")
                 
                 # 尝试检查主机路径的文件是否存在（可能在容器内无法访问，这是正常的）
                 # 由于 bind mount，容器内路径和主机路径应该指向同一位置
                 # 如果文件不在主机路径可见，可能是 Docker Desktop 的文件系统隔离导致的
                 try:
                     host_files_exist = host_tflite.exists() and host_json.exists()
-                    logger.debug(f"[NE301] 主机路径文件检查: TFLite={host_tflite.exists()}, JSON={host_json.exists()}")
+                    logger.debug(f"[NE301] Host path file check: TFLite={host_tflite.exists()}, JSON={host_json.exists()}")
                 except Exception as e:
-                    logger.debug(f"[NE301] 无法在容器内访问主机路径文件（这是正常的）: {e}")
+                    logger.debug(f"[NE301] Cannot access host path files in container (this is normal): {e}")
                     host_files_exist = False
                 
                 if not host_files_exist:
-                    logger.info(f"[NE301] 主机路径文件在容器内不可见（这是正常的），将依赖 bind mount 和 Docker 挂载")
-                    logger.info(f"[NE301]   容器内路径: {container_tflite} (exists: {container_tflite.exists()})")
-                    logger.info(f"[NE301]   容器内路径: {container_json} (exists: {container_json.exists()})")
-                    logger.info(f"[NE301]   主机路径（推断）: {mount_path}")
-                    logger.info(f"[NE301]   注意：文件已存在于容器内的挂载点，Docker 会将它们挂载到 ne301-dev 容器")
+                    logger.info(f"[NE301] Host path files not visible in container (this is normal), will rely on bind mount and Docker mount")
+                    logger.info(f"[NE301]   Container path: {container_tflite} (exists: {container_tflite.exists()})")
+                    logger.info(f"[NE301]   Container path: {container_json} (exists: {container_json.exists()})")
+                    logger.info(f"[NE301]   Host path (inferred): {mount_path}")
+                    logger.info(f"[NE301]   Note: Files already exist in container mount point, Docker will mount them to ne301-dev container")
                 else:
-                    logger.info(f"[NE301] ✓ 主机路径文件在容器内可见: {mount_path}")
+                    logger.info(f"[NE301] ✓ Host path files visible in container: {mount_path}")
                     logger.info(f"[NE301]   - {host_tflite}")
                     logger.info(f"[NE301]   - {host_json}")
             elif mount_path:
                 # 路径已解析，但可能格式验证失败（不应该发生，因为已使用宽松模式）
-                logger.warning(f"[NE301] 警告：路径格式验证失败: {mount_path}")
-                logger.warning(f"[NE301] 将继续尝试使用此路径进行 Docker 挂载")
+                logger.warning(f"[NE301] Warning: Path format validation failed: {mount_path}")
+                logger.warning(f"[NE301] Will continue to try using this path for Docker mount")
             else:
                 # 路径解析失败
-                logger.warning(f"[NE301] 警告：无法解析主机路径，将使用容器内路径（可能失败）")
+                logger.warning(f"[NE301] Warning: Failed to parse host path, will use container path (may fail)")
     else:
         # 不在容器内：直接使用本地路径
         docker_cmd.extend([
@@ -814,9 +814,9 @@ def _build_with_docker(
             local_json = ne301_project_path / "Model" / "weights" / f"{model_name}.json"
             if not local_tflite.exists() or not local_json.exists():
                 raise FileNotFoundError(
-                    f"模型文件不存在: {local_tflite} 或 {local_json}"
+                    f"Model files do not exist: {local_tflite} or {local_json}"
                 )
-            logger.info(f"[NE301] 验证通过：文件存在于本地路径")
+            logger.info(f"[NE301] Validation passed: Files exist in local path")
     
     # make model 需要在项目根目录执行
     # 使用 bash -c 来执行命令，容器的入口脚本会在执行命令时提供必要的环境变量
@@ -874,8 +874,8 @@ def _build_with_docker(
     ])
     
     logger.info(f"Running Docker build command: {' '.join(docker_cmd[:10])}...")  # 只显示前10个参数，避免日志过长
-    logger.info(f"[NE301] Docker 挂载路径: {mount_path if is_in_container else ne301_project_path}")
-    logger.info(f"[NE301] 模型名称: {model_name}")
+    logger.info(f"[NE301] Docker mount path: {mount_path if is_in_container else ne301_project_path}")
+    logger.info(f"[NE301] Model name: {model_name}")
     logger.info(debug_info)
     
     try:
@@ -891,8 +891,8 @@ def _build_with_docker(
         
         # 实时输出并收集日志
         output_lines = []
-        logger.info("[NE301] 开始编译，实时日志如下：")
-        print("[NE301] 开始编译，实时日志如下：")
+        logger.info("[NE301] Starting compilation, real-time logs:")
+        print("[NE301] Starting compilation, real-time logs:")
         
         # 使用线程或者直接读取，设置超时
         output_queue = queue.Queue()
@@ -983,15 +983,15 @@ def _build_with_docker(
             
             # 如果是挂载路径问题，提供更友好的错误信息
             if "Mounts denied" in error_msg or "not shared from the host" in error_msg:
-                logger.error("Docker 挂载路径失败（Docker-in-Docker 限制）")
-                logger.error("建议解决方案：")
-                logger.error("1. 在 docker-compose.yml 中挂载 ne301 目录到主机")
-                logger.error("2. 或配置 Docker Desktop 文件共享包含容器路径")
-                logger.error(f"3. 或使用主机路径: 取消注释 docker-compose.yml 中的 ./ne301:/app/ne301")
+                logger.error("Docker mount path failed (Docker-in-Docker limitation)")
+                logger.error("Recommended solutions:")
+                logger.error("1. Mount ne301 directory to host in docker-compose.yml")
+                logger.error("2. Or configure Docker Desktop file sharing to include container path")
+                logger.error(f"3. Or use host path: uncomment ./ne301:/app/ne301 in docker-compose.yml")
             
             logger.error(f"Docker build failed: {error_msg_clean}")
             logger.error(f"Full stdout: {result.stdout[:1000]}...")  # 只显示前1000字符
-            raise RuntimeError(f"NE301 模型编译失败: {error_msg_clean}")
+            raise RuntimeError(f"NE301 model compilation failed: {error_msg_clean}")
         
         logger.info("Docker build and package completed successfully")
         print("[NE301] Build and package completed successfully")
@@ -1029,10 +1029,10 @@ def _build_with_docker(
                     break
         
         if not model_bin:
-            logger.error("[NE301] 编译完成但未找到模型包文件")
-            print("[NE301] 编译完成但未找到模型包文件")
-            logger.error("[NE301] 检查了以下路径:")
-            print("[NE301] 检查了以下路径:")
+            logger.error("[NE301] Compilation completed but model package file not found")
+            print("[NE301] Compilation completed but model package file not found")
+            logger.error("[NE301] Checked the following paths:")
+            print("[NE301] Checked the following paths:")
             # 列出 build 目录内容以便调试
             build_dirs = [
                 ne301_project_path / "build",
@@ -1053,11 +1053,11 @@ def _build_with_docker(
         return model_bin
             
     except subprocess.TimeoutError:
-        logger.error("[NE301] Docker build 超时")
-        print("[NE301] Docker build 超时")
-        raise RuntimeError("NE301 模型编译超时（超过 10 分钟）")
+        logger.error("[NE301] Docker build timeout")
+        print("[NE301] Docker build timeout")
+        raise RuntimeError("NE301 model compilation timeout (exceeded 10 minutes)")
     except Exception as e:
-        logger.error(f"Docker build 异常: {e}")
+        logger.error(f"Docker build exception: {e}")
         raise
 
 
@@ -1085,7 +1085,7 @@ def _build_local(ne301_project_path: Path) -> Optional[Path]:
         if result_build.returncode != 0:
             logger.error(f"[NE301] Model build failed: {result_build.stderr or result_build.stdout}")
             print(f"[NE301] Model build failed: {result_build.stderr or result_build.stdout}")
-            raise RuntimeError(f"NE301 模型编译失败: {result_build.stderr or result_build.stdout}")
+            raise RuntimeError(f"NE301 model compilation failed: {result_build.stderr or result_build.stdout}")
 
         # 再执行 make pkg-model
         cmd_pkg = ["make", "pkg-model"]
@@ -1127,8 +1127,8 @@ def _build_local(ne301_project_path: Path) -> Optional[Path]:
             print(f"[NE301] Found raw .bin file (packaging may have failed): {model_bin}")
             return model_bin
         else:
-            logger.error(f"[NE301] 编译完成但未找到模型包文件")
-            print(f"[NE301] 编译完成但未找到模型包文件")
+            logger.error(f"[NE301] Compilation completed but model package file not found")
+            print(f"[NE301] Compilation completed but model package file not found")
             return None
             
     except FileNotFoundError:
@@ -1136,5 +1136,5 @@ def _build_local(ne301_project_path: Path) -> Optional[Path]:
     except subprocess.TimeoutExpired:
         raise RuntimeError("NE301 模型编译超时（超过 10 分钟）")
     except Exception as e:
-        logger.error(f"Local build 异常: {e}")
+        logger.error(f"Local build exception: {e}")
         raise

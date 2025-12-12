@@ -96,7 +96,8 @@
       "details": "检测详情",
       "preview": "预览",
       "detectionResult": "检测结果",
-      "failed": "模型测试失败"
+      "failed": "模型测试失败",
+      "noDetections": "未检测到任何目标"
     },
     "learningRate": {
       "title": "学习率参数",
@@ -200,6 +201,27 @@
     "confirmClose": "量化正在进行中，确定要关闭窗口吗？关闭后您将无法看到进度，但后台处理会继续。"
   },
   "annotation": {
+    "import": {
+      "title": "导入数据集",
+      "selectProject": "选择项目",
+      "selectProjectPlaceholder": "请选择要导入数据的项目",
+      "selectProjectFirst": "请先选择项目",
+      "selectFormat": "选择导入格式",
+      "formatImages": "图片文件",
+      "formatCOCO": "COCO 格式 (JSON)",
+      "formatYOLO": "YOLO 格式 (ZIP/目录)",
+      "formatProject": "项目导出 ZIP",
+      "selectFiles": "选择图片文件",
+      "selectDatasetFile": "选择数据集文件",
+      "selectFileButton": "选择文件",
+      "singleFileRequired": "请选择一个数据集文件",
+      "hintImages": "支持批量上传多张图片（JPG、PNG、BMP、GIF、WEBP）",
+      "hintCOCO": "上传 COCO 格式的 JSON 文件（包含 images、annotations、categories）",
+      "hintYOLO": "上传 YOLO 格式的 ZIP 文件（包含 images/ 与 labels/）",
+      "hintProject": "上传本项目导出的 ZIP 包（包含 images/ 与 annotations/ JSON）",
+      "importSuccess": "导入成功：{{images}} 张图片，{{annotations}} 个标注，{{classes}} 个类别",
+      "importFailed": "导入失败"
+    },
     "toolRectangle": "矩形框",
     "toolPolygon": "多边形",
     "toolKeypoint": "关键点",
@@ -215,6 +237,7 @@
     "backToProjects": "返回AI模型项目",
     "subtitle": "图像标注工作台",
     "trainModel": "训练模型",
+    "importDataset": "导入数据集",
     "exportDataset": "导出数据集",
     "exporting": "导出中...",
     "exportYOLO": "导出YOLO训练数据集",
@@ -265,6 +288,7 @@
     "title": "AI模型项目工作流",
     "subtitle": "与NE301设备无缝对接，从数据采集到模型部署的完整解决方案",
     "startProject": "开始创建项目",
+    "getDevice": "获取NeoEyes NE301 AI Camera 设备",
     "deviceName": "NE301 设备",
     "extension": "更多功能即将推出...",
     "workflow": {
@@ -317,6 +341,9 @@
     }
   },
   "shortcuts": {
+    "title": "快捷键",
+    "expand": "展开",
+    "collapse": "收起",
     "switchClass": "快速切换类别",
     "bboxTool": "矩形框工具",
     "polygonTool": "多边形工具",

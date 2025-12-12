@@ -509,7 +509,10 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   };
 
   const handleRunTest = async () => {
-    if (!testImage || !selectedTrainingId) return;
+    if (!testImage || !selectedTrainingId) {
+      console.warn('[Test] Missing testImage or selectedTrainingId:', { testImage: !!testImage, selectedTrainingId });
+      return;
+    }
 
     setIsTesting(true);
     try {
@@ -521,21 +524,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
       const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray]);
+      const blob = new Blob([byteArray], { type: 'image/png' });
       const file = new File([blob], 'test_image.png', { type: 'image/png' });
 
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('conf', String(testConf));
-      formData.append('iou', String(testIou));
 
-      const response = await fetch(
-        `${API_BASE_URL}/projects/${projectId}/train/${selectedTrainingId}/test?conf=${testConf}&iou=${testIou}`,
-        {
+      const url = `${API_BASE_URL}/projects/${projectId}/train/${selectedTrainingId}/test?conf=${testConf}&iou=${testIou}`;
+      console.log('[Test] Sending request to:', url, { conf: testConf, iou: testIou, fileSize: file.size });
+
+      const response = await fetch(url, {
           method: 'POST',
           body: formData,
-        }
-      );
+      });
+      
+      console.log('[Test] Response status:', response.status, response.statusText);
 
       if (!response.ok) {
         const error = await response.json();
@@ -543,9 +546,14 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
       }
 
       const data = await response.json();
+      console.log('[Test] Response data:', data);
       setTestResults(data);
     } catch (error: any) {
-      alert(`${t('training.test.failed')}: ${error.message}`);
+      console.error('[Test] Error:', error);
+      const errorMessage = error.message || 'Unknown error';
+      alert(`${t('training.test.failed')}: ${errorMessage}`);
+      // 即使出错也重置状态，允许重试
+      setTestResults(null);
     } finally {
       setIsTesting(false);
     }
@@ -1419,11 +1427,10 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                             <img src={testResults.annotated_image} alt={t('training.test.detectionResult')} />
                           </div>
                         )}
-                        {testResults.detections && testResults.detections.length > 0 && (
                           <div className="test-detections-list">
                             <div className="config-item">
-                              <label>{t('training.test.details', '检测详情')}</label>
-
+                            <label>{t('training.test.details')}</label>
+                            {testResults.detections && testResults.detections.length > 0 ? (
                               <div className="detection-list-container">
                                 {testResults.detections.map((det: any, index: number) => (
                                   <div key={index} className="detection-item">
@@ -1435,9 +1442,15 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                                   </div>
                                 ))}
                               </div>
+                            ) : (
+                              <div className="detection-list-container">
+                                <div className="detection-item no-detections">
+                                  <span>{t('training.test.noDetections', '未检测到任何目标')}</span>
                             </div>
                           </div>
                         )}
+                          </div>
+                        </div>
                       </>
                     ) : (
                       <div className="test-results-section placeholder">
