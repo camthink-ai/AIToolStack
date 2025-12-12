@@ -65,7 +65,7 @@ API routes live in `backend/api/routes.py`. Frontend config is in `frontend/src/
 - Key environment variables (examples):  
   - `API_BASE_URL`: frontend API base (e.g., `http://localhost:8000`)  
   - `MQTT_BROKER_HOST`: MQTT broker host/IP (e.g., `localhost` or broker service name in compose)  
-  - `MQTT_BROKER`, `MQTT_TOPIC`: NE301 MQTT settings（若后端/前端共用，MQTT_BROKER 可与 MQTT_BROKER_HOST 保持一致，或在 compose 里指向 broker 容器名）  
+  - `MQTT_BROKER`, `MQTT_TOPIC`: NE301 MQTT settings
   - `DATASETS_ROOT`: backend dataset storage path  
   - Add more as needed in `.env` or compose env overrides.
 
