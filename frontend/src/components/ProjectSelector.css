@@ -258,6 +258,7 @@
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  line-clamp: 2;
   word-break: break-word;
 }
 
@@ -274,6 +275,19 @@
   color: var(--text-light);
   font-size: 0.85em;
   font-family: monospace;
+  word-break: break-all;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.project-id code {
+  font-family: monospace;
+  word-break: break-all;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  display: inline-block;
 }
 
 .project-date {

@@ -189,7 +189,9 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                   </div>
                   <p className="project-description">{project.description || t('common.noDescription', '无描述')}</p>
                   <div className="project-meta">
-                    <div className="project-id">{t('project.id', 'ID')}: {project.id.substring(0, 8)}...</div>
+                    <div className="project-id">
+                      {t('project.id', 'ID')}: <code>{project.id}</code>
+                    </div>
                     {project.created_at && (
                       <div className="project-date">{t('common.createdAt', '创建时间')}: {formatDate(project.created_at)}</div>
                     )}

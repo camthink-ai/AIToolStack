@@ -202,6 +202,8 @@ class TrainingService:
         self.active_trainings: Dict[str, str] = {}
         # Training thread tracking: {training_id: thread}
         self.training_threads: Dict[str, threading.Thread] = {}
+        # Stop signals for graceful interruption: {training_id: Event}
+        self.stop_events: Dict[str, threading.Event] = {}
         self.training_lock = threading.RLock()  # Use RLock to allow re-entrant locking
     
     # ========= Database related utility methods =========
@@ -374,6 +376,9 @@ class TrainingService:
             # Add to training record list (newest first)
             self.training_records[project_id].insert(0, training_info)
             self.active_trainings[project_id] = training_id
+            # Prepare stop event for this training
+            stop_event = threading.Event()
+            self.stop_events[training_id] = stop_event
             
             # Persist to database
             print(f"[TrainingService] Persisting training record to database...")
@@ -386,7 +391,8 @@ class TrainingService:
                 target=self._run_training,
                 args=(training_id, project_id, dataset_path, training_info, model_type, model_size, epochs, imgsz, batch, device,
                       lr0, lrf, optimizer, momentum, weight_decay, patience, workers, val, save_period, amp,
-                      hsv_h, hsv_s, hsv_v, degrees, translate, scale, shear, perspective, flipud, fliplr, mosaic, mixup),
+                      hsv_h, hsv_s, hsv_v, degrees, translate, scale, shear, perspective, flipud, fliplr, mosaic, mixup,
+                      stop_event),
                 daemon=True,
                 name=f"TrainingThread-{training_id}"
             )
@@ -436,11 +442,15 @@ class TrainingService:
         fliplr: Optional[float] = None,
         mosaic: Optional[float] = None,
         mixup: Optional[float] = None,
+        stop_event: Optional[threading.Event] = None,
     ):
         """Run training in background thread"""
         print(f"[TrainingThread-{training_id}] Thread started, beginning training process")
         record_for_db = None
         training_success = False
+        stop_requested = False
+        # Use shared stop event if not provided (backward safety)
+        stop_event = stop_event or self.stop_events.get(training_id)
         try:
             if YOLO is None:
                 raise ImportError("ultralytics library is not installed. Please install it with: pip install ultralytics")
@@ -582,6 +592,27 @@ class TrainingService:
                 
                 # Add data augmentation parameters to training arguments
                 train_args.update(augment_info)
+                # Inject stop callbacks for graceful cancellation (use model.add_callback to avoid unsupported args)
+                if stop_event and hasattr(model, "add_callback"):
+                    stop_logged = {'flag': False}
+
+                    def _handle_stop(trainer):
+                        # Called inside training loop; stop ASAP (sets all known stop flags)
+                        if stop_event.is_set():
+                            # Different UL versions check different flags; set all to be safe
+                            setattr(trainer, "stop", True)
+                            setattr(trainer, "stop_training", True)
+                            setattr(trainer, "stop_epoch", True)
+                            if not stop_logged['flag']:
+                                stop_logged['flag'] = True
+                                self._add_log(training_id, project_id, "Stop requested, stopping after current batch...")
+
+                    try:
+                        model.add_callback("on_train_batch_end", _handle_stop)
+                        model.add_callback("on_train_epoch_end", _handle_stop)
+                    except Exception:
+                        # Best-effort: if callback registration fails, continue without graceful stop
+                        pass
                 
                 self._add_log(training_id, project_id, "=" * 60)
                 self._add_log(training_id, project_id, "Starting training")
@@ -601,8 +632,10 @@ class TrainingService:
                 # verbose=True ensures detailed training information output
                 train_args['verbose'] = True
                 results = model.train(**train_args)
-                
-            # Training completed successfully
+                # Mark if stop was requested after training exits
+                stop_requested = stop_event.is_set() if stop_event else False
+
+            # Training completed (normal or stopped)
             training_success = True
             results_obj = results  # Save results object for later use
                 
@@ -612,41 +645,56 @@ class TrainingService:
                 if project_id in self.training_records:
                     for record in self.training_records[project_id]:
                         if record.get('training_id') == training_id:
-                            record['status'] = 'completed'
-                            record['end_time'] = datetime.now().isoformat()
-                            
-                            # Extract more training metrics
-                            results_dict = results_obj.results_dict
-                            record['metrics'] = {
-                                'best_fitness': float(results_dict.get('metrics/fitness(B)', 0)),
-                                'mAP50': float(results_dict.get('metrics/mAP50(B)', 0)),
-                                'mAP50-95': float(results_dict.get('metrics/mAP50-95(B)', 0)),
-                                'precision': float(results_dict.get('metrics/precision(B)', 0)),
-                                'recall': float(results_dict.get('metrics/recall(B)', 0)),
-                                'box_loss': float(results_dict.get('train/box_loss', 0)),
-                                'cls_loss': float(results_dict.get('train/cls_loss', 0)),
-                                'dfl_loss': float(results_dict.get('train/dfl_loss', 0)),
-                                'val_box_loss': float(results_dict.get('val/box_loss', 0)),
-                                'val_cls_loss': float(results_dict.get('val/cls_loss', 0)),
-                                'val_dfl_loss': float(results_dict.get('val/dfl_loss', 0)),
-                            }
-                            # Get saved model path
-                            model_path = results_obj.save_dir / 'weights' / 'best.pt'
-                            if model_path.exists():
-                                record['model_path'] = str(model_path)
-                            record_for_db = record
+                            if stop_requested:
+                                record['status'] = 'stopped'
+                                record['end_time'] = datetime.now().isoformat()
+                                record['error'] = None
+                                record_for_db = record
+                            else:
+                                record['status'] = 'completed'
+                                record['end_time'] = datetime.now().isoformat()
+                                
+                                # Extract more training metrics
+                                results_dict = results_obj.results_dict
+                                record['metrics'] = {
+                                    'best_fitness': float(results_dict.get('metrics/fitness(B)', 0)),
+                                    'mAP50': float(results_dict.get('metrics/mAP50(B)', 0)),
+                                    'mAP50-95': float(results_dict.get('metrics/mAP50-95(B)', 0)),
+                                    'precision': float(results_dict.get('metrics/precision(B)', 0)),
+                                    'recall': float(results_dict.get('metrics/recall(B)', 0)),
+                                    'box_loss': float(results_dict.get('train/box_loss', 0)),
+                                    'cls_loss': float(results_dict.get('train/cls_loss', 0)),
+                                    'dfl_loss': float(results_dict.get('train/dfl_loss', 0)),
+                                    'val_box_loss': float(results_dict.get('val/box_loss', 0)),
+                                    'val_cls_loss': float(results_dict.get('val/cls_loss', 0)),
+                                    'val_dfl_loss': float(results_dict.get('val/dfl_loss', 0)),
+                                }
+                                # Get saved model path
+                                model_path = results_obj.save_dir / 'weights' / 'best.pt'
+                                if model_path.exists():
+                                    record['model_path'] = str(model_path)
+                                record_for_db = record
                             break
                     
                     # Clear active training flag
                     if project_id in self.active_trainings and self.active_trainings[project_id] == training_id:
                         del self.active_trainings[project_id]
+                # Cleanup stop event reference once training exits
+                if training_id in self.stop_events:
+                    del self.stop_events[training_id]
+                if training_id in self.training_threads:
+                    del self.training_threads[training_id]
             
             # Sync to database
             if record_for_db:
                 try:
                     self._persist_record(record_for_db)
-                    self._add_log(training_id, project_id, "Training completed!")
-                    logger.info(f"[Training] Training completed for project {project_id}, training_id: {training_id}")
+                    if stop_requested:
+                        self._add_log(training_id, project_id, "Training stopped by user")
+                        logger.info(f"[Training] Training stopped for project {project_id}, training_id: {training_id}")
+                    else:
+                        self._add_log(training_id, project_id, "Training completed!")
+                        logger.info(f"[Training] Training completed for project {project_id}, training_id: {training_id}")
                 except Exception as persist_error:
                     logger.error(f"[Training] Failed to persist completed training record: {persist_error}", exc_info=True)
             
@@ -670,17 +718,22 @@ class TrainingService:
         finally:
             # Ensure status is updated and active marker is cleared regardless of success or failure
             if not training_success:
-                # If training didn't succeed, ensure status is updated to failed
+                # If training didn't succeed, ensure status is updated to failed (unless stop requested)
+                stop_requested = stop_event.is_set() if stop_event else False
                 with self.training_lock:
                     record_for_db = None
                     # Find corresponding training record
                     if project_id in self.training_records:
                         for record in self.training_records[project_id]:
                             if record.get('training_id') == training_id:
-                                # Only update to failed if status is still running
-                                if record.get('status') == 'running':
-                                    record['status'] = 'failed'
-                                    record['error'] = error_msg if 'error_msg' in locals() else "Training failed unexpectedly"
+                                # Only update if still running/stopping
+                                if record.get('status') in ('running', 'stopping'):
+                                    if stop_requested:
+                                        record['status'] = 'stopped'
+                                        record['error'] = None
+                                    else:
+                                        record['status'] = 'failed'
+                                        record['error'] = error_msg if 'error_msg' in locals() else "Training failed unexpectedly"
                                     record['end_time'] = datetime.now().isoformat()
                                     record_for_db = record
                                 break
@@ -692,12 +745,18 @@ class TrainingService:
                     # Clear thread tracking
                     if training_id in self.training_threads:
                         del self.training_threads[training_id]
+                    if training_id in self.stop_events:
+                        del self.stop_events[training_id]
                 
                 # Sync to database
                 if record_for_db:
                     try:
                         self._persist_record(record_for_db)
-                        logger.info(f"[Training] Updated training status to 'failed' for project {project_id}, training_id: {training_id}")
+                        if stop_requested:
+                            self._add_log(training_id, project_id, "Training stopped by user")
+                            logger.info(f"[Training] Updated training status to 'stopped' for project {project_id}, training_id: {training_id}")
+                        else:
+                            logger.info(f"[Training] Updated training status to 'failed' for project {project_id}, training_id: {training_id}")
                     except Exception as persist_error:
                         logger.error(f"[Training] Failed to persist failed training record: {persist_error}", exc_info=True)
     
@@ -865,26 +924,85 @@ class TrainingService:
         Stop training:
         - If training_id is provided, try to stop that record;
         - Otherwise stop current active training.
-        Note: Hard interrupt not implemented yet, only marks as stopped.
+        Implements graceful stop by setting a stop flag checked by training thread.
         """
         with self.training_lock:
             target_id = training_id or self.active_trainings.get(project_id)
             if not target_id:
                 return False
-            record = self.get_training_record(project_id, target_id)
-            if record and record.get('status') == 'running':
-                record['status'] = 'stopped'
-                record['end_time'] = datetime.now().isoformat()
-                # Remove active marker
+            stop_event = self.stop_events.get(target_id)
+            if not stop_event:
+                return False
+            stop_event.set()
+
+            # Update status to stopped immediately for UI visibility
+            if project_id in self.training_records:
+                for record in self.training_records[project_id]:
+                    if record.get('training_id') == target_id and record.get('status') in ('running', 'stopping'):
+                        record['status'] = 'stopped'
+                        record['end_time'] = datetime.now().isoformat()
+                        try:
+                            self._persist_record(record)
+                        except Exception:
+                            pass
+                        break
+            # Remove active marker so status API falls back to DB/latest
+            if project_id in self.active_trainings and self.active_trainings[project_id] == target_id:
+                del self.active_trainings[project_id]
+            # Add a log for visibility
+            try:
+                self._add_log(target_id, project_id, "Stop requested, training marked as stopped.")
+            except Exception:
+                pass
+        
+        # Launch a watcher thread to force-stop if graceful stop fails
+        def _force_stop_watcher():
+            thread = self.training_threads.get(target_id)
+            if thread is None:
+                return
+            thread.join(timeout=5)
+            if thread.is_alive():
+                try:
+                    import ctypes
+                    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread.ident), ctypes.py_object(SystemExit))
+                    if res == 0:
+                        logger.warning(f"[Training] Force stop failed (no thread) for {target_id}")
+                    elif res > 1:
+                        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread.ident), None)
+                        logger.warning(f"[Training] Force stop rollback for {target_id}")
+                    else:
+                        logger.info(f"[Training] Force stop signal sent for {target_id}")
+                except Exception as e:
+                    logger.error(f"[Training] Force stop error for {target_id}: {e}")
+            # Ensure status and bookkeeping updated
+            with self.training_lock:
+                record_for_db = None
+                if project_id in self.training_records:
+                    for record in self.training_records[project_id]:
+                        if record.get('training_id') == target_id:
+                            record['status'] = 'stopped'
+                            record['error'] = None
+                            record['end_time'] = datetime.now().isoformat()
+                            record_for_db = record
+                            break
                 if project_id in self.active_trainings and self.active_trainings[project_id] == target_id:
                     del self.active_trainings[project_id]
-                try:
-                    self._persist_record(record)
-                except Exception:
-                    pass
-                return True
-            # If already completed or failed, return False directly
-            return False
+                if target_id in self.training_threads:
+                    del self.training_threads[target_id]
+                if target_id in self.stop_events:
+                    del self.stop_events[target_id]
+                if record_for_db:
+                    try:
+                        self._persist_record(record_for_db)
+                        self._add_log(target_id, project_id, "Training stopped by user (force)")
+                    except Exception:
+                        pass
+        try:
+            watcher = threading.Thread(target=_force_stop_watcher, daemon=True)
+            watcher.start()
+        except Exception as e:
+            logger.error(f"[Training] Failed to start force-stop watcher: {e}")
+        return True
     
     def clear_training(self, project_id: str, training_id: Optional[str] = None):
         """Clear training record and delete model files"""

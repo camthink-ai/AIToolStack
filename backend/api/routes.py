@@ -121,7 +121,11 @@ class AnnotationUpdate(BaseModel):
 @router.post("/projects", response_model=ProjectResponse)
 def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     """Create new project"""
-    project_id = str(uuid.uuid4())
+    # Generate short project id (8 hex chars) and ensure uniqueness
+    while True:
+        project_id = uuid.uuid4().hex[:8]
+        if not db.query(Project).filter(Project.id == project_id).first():
+            break
     
     db_project = Project(
         id=project_id,
