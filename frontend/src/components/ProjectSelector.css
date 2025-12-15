@@ -109,26 +109,6 @@
   color: var(--primary-color);
 }
 
-.btn-create {
-  height: var(--btn-height-lg);
-  min-height: var(--btn-height-lg);
-  padding: var(--btn-padding-lg);
-  background: var(--primary-color);
-  color: var(--text-white);
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  box-sizing: border-box;
-}
-
-.btn-create:hover {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-primary);
-}
-
 .btn-delete {
   background: transparent;
   border: none;
@@ -190,6 +170,54 @@
 .btn-danger:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.project-delete-btn {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+}
+
+.project-delete-btn:hover:not(:disabled) {
+  background: var(--error-light);
+  color: var(--error-color);
+}
+
+/* Create Project Dialog (统一样式) */
+.create-project-modal {
+  width: min(520px, 94vw);
+}
+
+.config-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-xl) var(--spacing-xl);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.config-modal-header h3 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.config-modal-content {
+  padding: var(--spacing-xl);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.config-modal-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-xl);
+  border-top: 1px solid var(--border-color);
+  justify-content: flex-end;
 }
 
 .project-grid {
@@ -468,6 +496,12 @@
   resize: vertical;
   min-height: 100px;
   font-family: inherit;
+}
+
+.form-error {
+  margin-top: 6px;
+  color: var(--error-color);
+  font-size: 12px;
 }
 
 /* 删除确认弹窗样式 */

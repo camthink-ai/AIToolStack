@@ -3,6 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { API_BASE_URL } from '../config';
 import { IoClose } from 'react-icons/io5';
 import './DatasetImportModal.css';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter, DialogClose } from '../ui/Dialog';
+import { Button } from '../ui/Button';
+import { FormField } from '../ui/FormField';
+import { Select, SelectItem } from '../ui/Select';
 
 interface DatasetImportModalProps {
   isOpen: boolean;
@@ -119,39 +123,37 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
     fileInputRef.current?.click();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content dataset-import-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{t('annotation.import.title', '导入数据集')}</h2>
-          <button className="modal-close" onClick={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="config-modal dataset-import-modal">
+        <DialogHeader className="config-modal-header">
+          <DialogTitle asChild>
+            <h3>{t('annotation.import.title', '导入数据集')}</h3>
+          </DialogTitle>
+          <DialogClose className="close-btn" onClick={onClose}>
             <IoClose />
-          </button>
-        </div>
+          </DialogClose>
+        </DialogHeader>
 
-        <div className="modal-body dataset-import-body">
-          <div className="form-group">
-            <label>{t('annotation.import.selectFormat', '选择导入格式')}</label>
-            <select
-              className="dataset-import-select"
+        <DialogBody className="config-modal-content dataset-import-body">
+          <FormField label={t('annotation.import.selectFormat', '选择导入格式')}>
+            <Select
               value={importFormat}
-              onChange={(e) => setImportFormat(e.target.value as 'coco' | 'yolo' | 'project_zip')}
+              onValueChange={(v) => setImportFormat(v as 'coco' | 'yolo' | 'project_zip')}
               disabled={isUploading}
             >
-              <option value="coco">{t('annotation.import.formatCOCO', 'COCO 格式 (JSON)')}</option>
-              <option value="yolo">{t('annotation.import.formatYOLO', 'YOLO 格式 (ZIP/目录)')}</option>
-              <option value="project_zip">{t('annotation.import.formatProject', '项目导出 ZIP')}</option>
-            </select>
+              <SelectItem value="coco">{t('annotation.import.formatCOCO', 'COCO 格式 (JSON)')}</SelectItem>
+              <SelectItem value="yolo">{t('annotation.import.formatYOLO', 'YOLO 格式 (ZIP/目录)')}</SelectItem>
+              <SelectItem value="project_zip">{t('annotation.import.formatProject', '项目导出 ZIP')}</SelectItem>
+            </Select>
             <p className="dataset-import-hint">
               {importFormat === 'coco' && t('annotation.import.hintCOCO', '上传 COCO 格式的 JSON 文件（包含 images、annotations、categories）')}
               {importFormat === 'yolo' && t('annotation.import.hintYOLO', '上传 YOLO 格式的 ZIP 文件（包含 images/ 与 labels/）')}
               {importFormat === 'project_zip' && t('annotation.import.hintProject', '上传本项目导出的 ZIP 包（包含 images/ 与 annotations/ JSON）')}
             </p>
-          </div>
+          </FormField>
 
-          <div className="form-group">
+          <FormField>
             <div className="dataset-import-upload-area">
               <input
                 ref={fileInputRef}
@@ -166,15 +168,15 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
                 className="dataset-import-file-input"
                 disabled={!selectedProjectId || isUploading}
               />
-              <button
-                className="btn-primary dataset-import-upload-btn"
+              <Button
+                className="dataset-import-upload-btn"
                 onClick={handleUploadClick}
                 disabled={!selectedProjectId || isUploading}
               >
                 {t('annotation.import.selectFileButton', '选择文件')}
-              </button>
+              </Button>
             </div>
-          </div>
+          </FormField>
 
           {isUploading && uploadProgress && (
             <div className="dataset-import-progress">
@@ -194,18 +196,18 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
               </div>
             </div>
           )}
-        </div>
+        </DialogBody>
 
-        <div className="modal-footer">
-          <button
-            className="btn-secondary"
+        <DialogFooter className="config-modal-actions">
+          <Button
+            variant="secondary"
             onClick={onClose}
             disabled={isUploading}
           >
             {t('common.cancel', '取消')}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };

@@ -452,35 +452,7 @@
 }
 
 .btn-upload {
-  height: var(--btn-height-sm);
-  min-height: var(--btn-height-sm);
-  padding: var(--btn-padding-sm);
-  background: var(--primary-color);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-white);
-  cursor: pointer;
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  font-weight: var(--font-weight-medium);
-  transition: all var(--transition-base);
-  white-space: nowrap;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  box-sizing: border-box;
-}
-
-.btn-upload:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-primary);
-}
-
-.btn-upload:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  /* Layout-only: extra hook for upload button, visuals from Button variants */
 }
 
 .upload-progress-info {

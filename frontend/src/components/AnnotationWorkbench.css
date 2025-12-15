@@ -29,35 +29,10 @@
   gap: var(--spacing-lg);
 }
 
-.btn-back {
-  height: var(--btn-height-sm);
-  min-height: var(--btn-height-sm);
-  padding: var(--btn-padding-sm);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  transition: all var(--transition-base);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  white-space: nowrap;
-  box-sizing: border-box;
-}
-
 .btn-back svg {
   width: 20px;
   height: 20px;
   flex-shrink: 0;
-}
-
-.btn-back:hover {
-  background: var(--bg-secondary);
-  border-color: var(--primary-color);
-  color: var(--primary-color);
 }
 
 .header-left h2 {
@@ -133,38 +108,6 @@
   position: relative;
 }
 
-.btn-export {
-  height: var(--btn-height-sm);
-  min-height: var(--btn-height-sm);
-  padding: var(--btn-padding-sm);
-  background: var(--primary-color);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-white);
-  cursor: pointer;
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  font-weight: var(--font-weight-medium);
-  transition: all var(--transition-base);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  white-space: nowrap;
-  box-sizing: border-box;
-}
-
-.btn-export:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-primary);
-}
-
-.btn-export:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .btn-export svg {
   width: 18px;
   height: 18px;
@@ -196,25 +139,15 @@
 }
 
 .dropdown-item {
-  display: block;
   width: 100%;
+  justify-content: flex-start;
+  align-items: flex-start;
   padding: 10px var(--spacing-lg);
-  background: transparent;
-  border: none;
-  text-align: left;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--font-size-md);
-  transition: background var(--transition-base);
-}
-
-.dropdown-item:hover:not(:disabled) {
-  background: var(--bg-secondary);
-}
-
-.dropdown-item:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  border-radius: 0;
+  white-space: normal;
+  line-height: var(--line-height-normal);
+  height: auto;
+  min-height: auto;
 }
 
 .dropdown-item:not(:last-child) {

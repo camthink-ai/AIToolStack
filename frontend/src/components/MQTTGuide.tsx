@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { IoChevronDown, IoChevronUp, IoInformationCircleOutline, IoCheckmarkCircle, IoCloseCircle, IoCopyOutline, IoRefresh } from 'react-icons/io5';
 import { API_BASE_URL } from '../config';
 import './MQTTGuide.css';
+import { Button } from '../ui/Button';
 
 // Icon component wrapper
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -177,17 +178,20 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
                       {mqttStatus?.server_port ? `:${mqttStatus.server_port}` : (mqttStatus?.port ? `:${mqttStatus.port}` : ':8000')}
                     </code>
                     {(mqttStatus?.server_ip || mqttStatus?.broker) && (
-                      <button
-                        className="btn-copy"
-                        onClick={() => copyToClipboard(
-                          `${mqttStatus?.server_ip || mqttStatus?.broker || ''}${mqttStatus?.server_port ? `:${mqttStatus.server_port}` : (mqttStatus?.port ? `:${mqttStatus.port}` : ':8000')}`,
-                          'serverIp'
-                        )}
-                        title={t('mqtt.copy')}
-                      >
-                        <Icon component={IoCopyOutline} />
-                        {copied === 'serverIp' && <span className="copied-tooltip">{t('mqtt.copied')}</span>}
-                      </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="btn-copy"
+                      onClick={() => copyToClipboard(
+                        `${mqttStatus?.server_ip || mqttStatus?.broker || ''}${mqttStatus?.server_port ? `:${mqttStatus.server_port}` : (mqttStatus?.port ? `:${mqttStatus.port}` : ':8000')}`,
+                        'serverIp'
+                      )}
+                      title={t('mqtt.copy')}
+                    >
+                      <Icon component={IoCopyOutline} />
+                      {copied === 'serverIp' && <span className="copied-tooltip">{t('mqtt.copied')}</span>}
+                    </Button>
                     )}
                   </div>
                 </div>
@@ -195,28 +199,34 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
                   <span className="info-label">{t('mqtt.projectId')}</span>
                   <div className="info-value-group">
                     <code className="info-value">{projectId}</code>
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
                       className="btn-copy"
                       onClick={() => copyToClipboard(projectId, 'projectId')}
                       title={t('mqtt.copy')}
                     >
                       <Icon component={IoCopyOutline} />
                       {copied === 'projectId' && <span className="copied-tooltip">{t('mqtt.copied')}</span>}
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div className="info-item">
                   <span className="info-label">{t('mqtt.mqttTopic')}</span>
                   <div className="info-value-group">
                     <code className="info-value">{mqttTopic}</code>
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
                       className="btn-copy"
                       onClick={() => copyToClipboard(mqttTopic, 'topic')}
                       title={t('mqtt.copy')}
                     >
                       <Icon component={IoCopyOutline} />
                       {copied === 'topic' && <span className="copied-tooltip">{t('mqtt.copied')}</span>}
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 {mqttStatus?.broker && (
@@ -234,14 +244,17 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
                 )}
                 
                 <div className="mqtt-test-section">
-                  <button
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
                     className="btn-test-mqtt"
                     onClick={testMQTTConnection}
                     disabled={isTesting || !mqttStatus?.enabled}
                   >
                     <Icon component={IoRefresh} />
                     {isTesting ? t('mqtt.testing') : t('mqtt.testConnection')}
-                  </button>
+                  </Button>
                   {testResult && (
                     <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
                       <div className="test-result-message">{testResult.message}</div>
@@ -336,14 +349,17 @@ mosquitto_pub -h localhost -t test -m "Hello MQTT"`}</code></pre>
                 <div className="code-block-container">
                   <div className="code-block-header">
                     <span>{t('mqtt.example.jsonFormat')}</span>
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
                       className="btn-copy"
                       onClick={() => copyToClipboard(examplePayload, 'example')}
                       title={t('mqtt.copyCode')}
                     >
                       <Icon component={IoCopyOutline} />
                       {copied === 'example' && <span className="copied-tooltip">{t('mqtt.copied')}</span>}
-                    </button>
+                    </Button>
                   </div>
                   <pre className="code-block">
                     <code>{examplePayload}</code>

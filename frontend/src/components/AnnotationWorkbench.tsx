@@ -9,8 +9,9 @@ import { TrainingPanel } from './TrainingPanel';
 import { DatasetImportModal } from './DatasetImportModal';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { API_BASE_URL } from '../config';
-import { IoArrowBack, IoDownload, IoChevronDown, IoCloudUpload } from 'react-icons/io5';
+import { IoArrowBack, IoDownload, IoChevronDown, IoCloudUpload, IoRocket } from 'react-icons/io5';
 import './AnnotationWorkbench.css';
+import { Button } from '../ui/Button';
 
 // Icon component wrapper to resolve TypeScript type issues
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -496,9 +497,9 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
     <div className="annotation-workbench">
       <div className="workbench-header">
         <div className="header-left">
-          <button onClick={onBack} className="btn-back">
+          <Button onClick={onBack} variant="secondary" size="sm" className="btn-back">
             <Icon component={IoArrowBack} /> {t('annotation.backToProjects')}
-          </button>
+          </Button>
           <h2>{project.name}</h2>
           <span className="workbench-subtitle">{t('annotation.subtitle', '图像标注工作台')}</span>
         </div>
@@ -516,15 +517,9 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           
           <MQTTGuide projectId={project.id} projectName={project.name} />
           
-          <button
-            className="btn-export"
-            onClick={() => setShowImportModal(true)}
-          >
-            <Icon component={IoCloudUpload} />
-            <span>{t('annotation.importDataset', '导入数据集')}</span>
-          </button>
-          
-          <button
+          <Button
+            variant="primary"
+            size="sm"
             className="btn-export"
             onClick={() => {
               if (onOpenTraining) {
@@ -534,11 +529,24 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
               }
             }}
           >
-            {t('annotation.trainModel')}
-          </button>
+            <Icon component={IoRocket} />
+            <span>{t('annotation.trainModel')}</span>
+          </Button>
+          
+          <Button
+            variant="secondary"
+            size="sm"
+            className="btn-export"
+            onClick={() => setShowImportModal(true)}
+          >
+            <Icon component={IoCloudUpload} />
+            <span>{t('annotation.importDataset', '导入数据集')}</span>
+          </Button>
           
           <div className="export-dropdown" ref={exportMenuRef}>
-            <button
+            <Button
+              variant="secondary"
+              size="sm"
               className="btn-export"
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={isExporting}
@@ -546,24 +554,28 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
               <Icon component={IoDownload} />
               <span>{isExporting ? t('annotation.exporting') : t('annotation.exportDataset')}</span>
               <Icon component={IoChevronDown} />
-            </button>
+            </Button>
             
             {showExportMenu && (
               <div className="dropdown-menu">
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="dropdown-item"
                   onClick={() => handleExportDataset('yolo')}
                   disabled={isExporting}
                 >
                   {t('annotation.exportYOLO')}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="dropdown-item"
                   onClick={() => handleExportDataset('zip')}
                   disabled={isExporting}
                 >
                   {t('annotation.exportZIP')}
-                </button>
+                </Button>
               </div>
             )}
           </div>

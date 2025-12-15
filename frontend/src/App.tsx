@@ -4,7 +4,6 @@ import { Dashboard } from './components/Dashboard';
 import { ProjectSelector } from './components/ProjectSelector';
 import { AnnotationWorkbench } from './components/AnnotationWorkbench';
 import { TrainingPanel } from './components/TrainingPanel';
-import { useTranslation } from 'react-i18next';
 import { API_BASE_URL } from './config';
 import './App.css';
 
