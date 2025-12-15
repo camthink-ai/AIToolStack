@@ -7,6 +7,7 @@ AI Tool Stack 是一个面向 [NeoEyes NE301](https://github.com/camthink-ai/ne3
 ![Dashboard](img/dashboard.png)
 ![AI Model Project](img/ai-model-project.png)
 ![Annotation Workbench](img/Annotation%20tool.png)
+![Train model](/img/Train%20model.png)
 
 ## 核心功能
 - **数据采集与管理**：支持相机通过MQTT图像采集数据并上传至项目空间统一管理；

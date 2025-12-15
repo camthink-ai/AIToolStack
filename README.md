@@ -7,6 +7,7 @@ AI Tool Stack is an end-to-end edge-AI toolkit for [NeoEyes NE301](https://githu
 ![Dashboard](img/dashboard.png)
 ![AI Model Project](img/ai-model-project.png)
 ![Annotation Workbench](img/Annotation%20tool.png)
+![Train model](/img/Train%20model.png)
 
 ## Key Features
 - **Data ingest & management**: Camera image collection via MQTT, uploading data to project space for unified management.
