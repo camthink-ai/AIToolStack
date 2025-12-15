@@ -29,6 +29,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add request logging middleware
+@app.middleware("http")
+async def log_requests(request, call_next):
+    """Log all incoming requests"""
+    print(f"[Request] {request.method} {request.url.path}")
+    response = await call_next(request)
+    print(f"[Response] {request.method} {request.url.path} -> {response.status_code}")
+    return response
+
 # Register API routes (must be registered before static file routes)
 app.include_router(routes.router, prefix="/api", tags=["API"])
 
@@ -46,21 +55,37 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str):
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket, project_id)
 
+# Register health check endpoint BEFORE catch-all route
+# FastAPI matches more specific routes first, so /health will match before /{full_path:path}
+@app.get("/health")
+def health_check():
+    """Health check endpoint for Docker healthchecks"""
+    return {
+        "status": "healthy",
+        "mqtt_enabled": settings.MQTT_ENABLED,
+        "mqtt_connected": mqtt_service.is_connected if settings.MQTT_ENABLED else False
+    }
+
 # Static file configuration (for serving frontend build artifacts in Docker deployment)
-# Note: Must be registered after API routes to avoid intercepting API requests
+# Note: Must be registered after API routes and health endpoint to avoid intercepting them
 FRONTEND_BUILD_DIR = Path(__file__).parent.parent / "frontend" / "build"
 if FRONTEND_BUILD_DIR.exists():
     # Mount static file directory
     app.mount("/static", StaticFiles(directory=str(FRONTEND_BUILD_DIR / "static")), name="static")
     
     # Handle frontend routing (required for SPA applications)
-    # Exclude API, WebSocket, and health paths
+    # This catch-all route will only match if /health, /api, /ws don't match first
+    # FastAPI matches more specific routes first, so /health should match before this
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         """Serve frontend static files or index.html (for React Router)"""
-        # Exclude API and WebSocket paths
-        if full_path.startswith("api") or full_path.startswith("ws") or full_path == "health":
-            from fastapi import HTTPException
+        from fastapi import HTTPException
+        
+        # Exclude API and WebSocket paths (health is handled by specific route above)
+        if (full_path.startswith("api/") or 
+            full_path.startswith("ws/") or
+            full_path.startswith("api") or 
+            full_path.startswith("ws")):
             raise HTTPException(status_code=404, detail="Not found")
         
         file_path = FRONTEND_BUILD_DIR / full_path
@@ -71,7 +96,6 @@ if FRONTEND_BUILD_DIR.exists():
         index_path = FRONTEND_BUILD_DIR / "index.html"
         if index_path.exists():
             return FileResponse(str(index_path))
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Frontend not found")
 
 
@@ -141,16 +165,6 @@ def api_info():
         "name": "AI Tool Stack API",
         "version": "1.0.0",
         "status": "running"
-    }
-
-
-@app.get("/health")
-def health_check():
-    """Health check"""
-    return {
-        "status": "healthy",
-        "mqtt_enabled": settings.MQTT_ENABLED,
-        "mqtt_connected": mqtt_service.is_connected if settings.MQTT_ENABLED else False
     }
 
 

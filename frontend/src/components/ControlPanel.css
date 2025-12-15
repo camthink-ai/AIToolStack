@@ -35,7 +35,7 @@
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  padding: 15px;
+  padding: var(--spacing-lg);
   border-bottom: 1px solid var(--border-color);
   overflow-y: auto;
   max-height: 50%;
@@ -45,7 +45,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 15px;
+  padding: var(--spacing-lg);
   min-height: 0;
   overflow-y: auto;
 }
@@ -54,40 +54,40 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 15px;
+  padding: var(--spacing-lg);
   overflow-y: auto;
   min-height: 0;
 }
 
 .panel-content h3 {
-  font-size: 14px;
-  margin-bottom: 12px;
+  font-size: var(--font-size-md);
+  margin-bottom: var(--spacing-md);
   color: var(--primary-color);
 }
 
 .empty-state {
   text-align: center;
   color: var(--text-light);
-  padding: 40px 20px;
-  font-size: 13px;
+  padding: var(--spacing-3xl) var(--spacing-xl);
+  font-size: var(--font-size-base);
 }
 
-/* 标注列表 */
+/* Annotation list */
 .annotation-items {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 
 .annotation-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  transition: all 0.2s;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
 }
 
 .annotation-item:hover {
@@ -97,7 +97,7 @@
 
 .annotation-item.selected {
   border-color: var(--primary-color);
-  background: rgba(10, 13, 22, 0.08);
+  background: var(--primary-lighter);
 }
 
 .annotation-content {
@@ -110,14 +110,14 @@
 }
 
 .annotation-delete-btn {
-  padding: 4px 8px;
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: transparent;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-light);
   cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
+  font-size: var(--font-size-md);
+  transition: all var(--transition-base);
   flex-shrink: 0;
   opacity: 0.7;
   display: flex;
@@ -141,7 +141,7 @@
 .annotation-color {
   width: 16px;
   height: 16px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
@@ -151,36 +151,36 @@
 }
 
 .annotation-class {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: var(--spacing-xs);
 }
 
 .annotation-type {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-light);
   text-transform: uppercase;
 }
 
-/* 类别面板 */
+/* Class panel */
 .class-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 20px;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xl);
 }
 
 .class-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -199,37 +199,37 @@
 .class-color {
   width: 12px;
   height: 12px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
   border: 1px solid var(--border-color);
 }
 
 .class-name {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   white-space: nowrap;
 }
 
 .class-shortcut {
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   color: var(--text-light);
-  font-family: monospace;
+  font-family: var(--font-family-mono);
   background: var(--bg-secondary);
-  padding: 1px 4px;
-  border-radius: 2px;
+  padding: 1px var(--spacing-xs);
+  border-radius: var(--radius-sm);
 }
 
 .class-delete-btn {
-  padding: 2px 4px;
+  padding: var(--spacing-xs);
   background: transparent;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--text-light);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   flex-shrink: 0;
   opacity: 0;
 }
@@ -244,31 +244,25 @@
 }
 
 .create-class {
-  margin-top: 15px;
-  padding-top: 15px;
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
   border-top: 1px solid var(--border-color);
 }
 
 .create-class h4 {
-  font-size: 12px;
-  margin-bottom: 8px;
-  color: var(--text-primary);
-}
-
-.create-class h4 {
-  font-size: 12px;
-  margin-bottom: 8px;
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-sm);
   color: var(--text-primary);
 }
 
 .class-input {
   width: 100%;
-  padding: 8px;
+  padding: var(--spacing-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   margin-bottom: 10px;
 }
 
@@ -279,7 +273,7 @@
 
 .color-input-group {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
   margin-bottom: 10px;
 }
 
@@ -287,20 +281,20 @@
   width: 50px;
   height: 36px;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  padding: 2px;
+  padding: var(--spacing-xs);
 }
 
 .color-text {
   flex: 1;
-  padding: 8px;
+  padding: var(--spacing-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-size: 13px;
-  font-family: monospace;
+  font-size: var(--font-size-base);
+  font-family: var(--font-family-mono);
 }
 
 .color-text:focus {
@@ -315,17 +309,17 @@
   padding: var(--btn-padding-md);
   background: var(--primary-color);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-white);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   cursor: pointer;
-  transition: all 0.2s;
-  font-weight: 500;
+  transition: all var(--transition-base);
+  font-weight: var(--font-weight-medium);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -333,14 +327,14 @@
 .btn-create-class:hover {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
-/* 文件导航 */
+/* File navigation */
 .file-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--spacing-sm);
 }
 
 .file-item {
@@ -350,9 +344,9 @@
   padding: 10px;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   position: relative;
 }
 
@@ -363,7 +357,7 @@
 
 .file-item.current {
   border-color: var(--primary-color);
-  background: rgba(10, 13, 22, 0.08);
+  background: var(--primary-lighter);
 }
 
 .file-status {
@@ -373,7 +367,7 @@
 .status-dot {
   width: 10px;
   height: 10px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
 }
 
 .status-dot.labeled {
@@ -390,18 +384,18 @@
 }
 
 .file-name {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
-  margin-bottom: 2px;
+  margin-bottom: var(--spacing-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .file-meta {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-light);
-  font-family: monospace;
+  font-family: var(--font-family-mono);
 }
 
 .file-delete-btn {
@@ -409,11 +403,11 @@
   padding: 0;
   background: transparent;
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-light);
   cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
+  font-size: var(--font-size-md);
+  transition: all var(--transition-base);
   flex-shrink: 0;
   opacity: 0.7;
   display: inline-flex;
@@ -448,7 +442,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: var(--spacing-lg);
   gap: 10px;
 }
 
@@ -463,25 +457,25 @@
   padding: var(--btn-padding-sm);
   background: var(--primary-color);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-white);
   cursor: pointer;
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
-  font-weight: 500;
-  transition: all 0.2s;
+  font-weight: var(--font-weight-medium);
+  transition: all var(--transition-base);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   box-sizing: border-box;
 }
 
 .btn-upload:hover:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .btn-upload:disabled {
@@ -490,17 +484,17 @@
 }
 
 .upload-progress-info {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
-  margin-top: 4px;
-  padding: 4px 8px;
+  margin-top: var(--spacing-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: var(--bg-secondary);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   max-width: 300px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  animation: fadeIn 0.3s ease-in;
+  animation: fadeIn var(--transition-slow) ease-in;
 }
 
 @keyframes fadeIn {

@@ -1,6 +1,7 @@
 .language-switcher {
   position: relative;
   display: inline-block;
+  z-index: 1001; /* Higher than modal overlays (1000) to ensure visibility */
 }
 
 .language-dropdown {
@@ -13,17 +14,17 @@
   padding: var(--btn-padding-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   cursor: pointer;
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
-  font-weight: 500;
-  transition: all 0.2s;
+  font-weight: var(--font-weight-medium);
+  transition: all var(--transition-base);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   box-sizing: border-box;
 }
 
@@ -50,7 +51,7 @@
 .language-chevron {
   width: 16px;
   height: 16px;
-  transition: transform 0.2s;
+  transition: transform var(--transition-base);
   flex-shrink: 0;
   color: var(--text-light);
 }
@@ -61,28 +62,28 @@
 
 .language-dropdown-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--spacing-xs));
   right: 0;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
   min-width: 120px;
-  z-index: 1000;
+  z-index: 1001; /* Higher than modal overlays (1000) to ensure visibility above all modals */
   overflow: hidden;
 }
 
 .language-dropdown-item {
   display: block;
   width: 100%;
-  padding: 10px 16px;
+  padding: 10px var(--spacing-lg);
   background: transparent;
   border: none;
   text-align: left;
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 14px;
-  transition: background 0.2s;
+  font-size: var(--font-size-md);
+  transition: background var(--transition-base);
 }
 
 .language-dropdown-item:hover {
@@ -90,9 +91,9 @@
 }
 
 .language-dropdown-item.active {
-  background: rgba(235, 129, 79, 0.1);
+  background: var(--accent-light);
   color: var(--accent-color);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .language-dropdown-item:not(:last-child) {

@@ -1,45 +1,14 @@
-:root {
-  /* 主题色 - 深色（用于按钮和选中状态） */
-  --primary-color: #0A0D16;
-  --primary-hover: #1a1d26;
-  --primary-active: #0A0D16;
-  
-  /* 装饰色 - 橙色（用于装饰元素） */
-  --accent-color: #EB814F;
-  --accent-hover: #f59a6b;
-  
-  /* 背景色 */
-  --bg-primary: #ffffff;
-  --bg-secondary: #f5f5f5;
-  --bg-dark: #ffffff;
-  --bg-dark-secondary: #fafafa;
-  
-  /* 文本色 */
-  --text-primary: #000000;
-  --text-secondary: #333333;
-  --text-light: #666666;
-  --text-white: #ffffff;
-  
-  /* 边框色 */
-  --border-color: #e8e8e8;
-  --border-dark: #d9d9d9;
-  
-  /* 状态色 */
-  --success-color: #52c41a;
-  --warning-color: #EB814F;
-  --error-color: #ff4d4f;
-  --info-color: #0A0D16;
-  
-  /* 按钮规范 */
-  --btn-height-sm: 28px;
-  --btn-height-md: 32px;
-  --btn-height-lg: 36px;
-  --btn-padding-sm: 6px 12px;
-  --btn-padding-md: 8px 16px;
-  --btn-padding-lg: 10px 20px;
-  --btn-font-size: 13px;
-  --btn-line-height: 1.5;
-}
+/**
+ * Main Stylesheet
+ * Imports unified style system and defines base styles
+ */
+
+/* Import unified style system */
+@import './styles/theme.css';
+@import './styles/components.css';
+@import './styles/utilities.css';
+
+/* ========== Reset & Base Styles ========== */
 
 * {
   margin: 0;
@@ -49,17 +18,18 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: var(--font-family-mono);
 }
 
 #root {
@@ -68,52 +38,10 @@ code {
   overflow: hidden;
 }
 
-/* 统一按钮基础样式 */
+/* Base button styles - using unified component styles from components.css */
 button {
-  font-family: inherit;
+  font-family: var(--font-family-base);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   box-sizing: border-box;
-}
-
-/* 按钮高度标准化 - 小按钮 */
-.btn-sm,
-[class*="btn-"][class*="small"],
-button[class*="btn"]:not([class*="btn-lg"]):not([class*="btn-md"]) {
-  height: var(--btn-height-sm);
-  min-height: var(--btn-height-sm);
-  padding: var(--btn-padding-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-/* 按钮高度标准化 - 中等按钮 */
-.btn-md,
-[class*="btn-md"] {
-  height: var(--btn-height-md);
-  min-height: var(--btn-height-md);
-  padding: var(--btn-padding-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-/* 按钮高度标准化 - 大按钮 */
-.btn-lg,
-[class*="btn-lg"],
-.btn-primary:not(.btn-sm):not(.btn-md),
-.btn-secondary:not(.btn-sm):not(.btn-md) {
-  height: var(--btn-height-lg);
-  min-height: var(--btn-height-lg);
-  padding: var(--btn-padding-lg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
 }

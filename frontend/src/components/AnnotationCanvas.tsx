@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ToolType, Annotation, ImageInfo, Class } from './AnnotationWorkbench';
 import { API_BASE_URL } from '../config';
 import { IoWarning } from 'react-icons/io5';
@@ -41,6 +42,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   onAnnotationSelect,
   projectId
 }) => {
+  const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -1228,17 +1230,17 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   // Get drawing hint text
   const getDrawingHint = () => {
     if (tool === 'bbox' && bboxStart) {
-      return '拖动鼠标绘制矩形，释放完成';
+      return t('annotation.hint.bboxDrawing');
     } else if (tool === 'polygon' && isDrawingPolygon) {
-      return `多边形绘制中 (${polygonPoints.length} 点) - 点击添加点，点击起点/双击/Enter 完成，ESC/右键取消`;
+      return t('annotation.hint.polygonDrawing', { count: polygonPoints.length });
     } else if (tool === 'keypoint' && isDrawingKeypoints) {
-      return `关键点绘制中 (${keypoints.length} 点) - 点击添加点，右键/双击完成，ESC/Backspace 删除最后一点`;
+      return t('annotation.hint.keypointDrawing', { count: keypoints.length });
     } else if (tool === 'bbox') {
-      return '点击并拖动绘制矩形框';
+      return t('annotation.hint.bboxStart');
     } else if (tool === 'polygon') {
-      return '点击开始绘制多边形';
+      return t('annotation.hint.polygonStart');
     } else if (tool === 'keypoint') {
-      return '点击添加关键点';
+      return t('annotation.hint.keypointStart');
     }
     return null;
   };
@@ -1332,7 +1334,11 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       )}
       {drawingHint && !imageLoading && !imageError && (
         <div className="drawing-hint">
-          <strong>{tool === 'bbox' ? '矩形' : tool === 'polygon' ? '多边形' : '关键点'}</strong>: {drawingHint}
+          <strong>
+            {tool === 'bbox' ? t('annotation.toolRectangle') : 
+             tool === 'polygon' ? t('annotation.toolPolygon') : 
+             t('annotation.toolKeypoint')}
+          </strong>: {drawingHint}
         </div>
       )}
       <canvas

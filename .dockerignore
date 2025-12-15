@@ -8,6 +8,8 @@ env/
 venv/
 ENV/
 .venv
+backend/venv/
+backend/__pycache__/
 *.egg-info/
 dist/
 build/

@@ -5,6 +5,7 @@ import { ProjectSelector } from './components/ProjectSelector';
 import { AnnotationWorkbench } from './components/AnnotationWorkbench';
 import { TrainingPanel } from './components/TrainingPanel';
 import { useTranslation } from 'react-i18next';
+import { API_BASE_URL } from './config';
 import './App.css';
 
 interface Project {
@@ -31,7 +32,7 @@ function App() {
 
   const fetchProjects = async () => {
     try {
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000/api'}/projects`);
+      const response = await fetch(`${API_BASE_URL}/projects`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

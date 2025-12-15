@@ -488,7 +488,7 @@ def _build_with_docker(
     
     # Check if Docker image exists
     check_cmd = ["docker", "images", "-q", docker_image]
-    result = subprocess.run(check_cmd, capture_output=True, text=True)
+    result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
     if not result.stdout.strip():
         logger.warning(f"Docker image {docker_image} does not exist, attempting to pull...")
         pull_cmd = ["docker", "pull"]
@@ -496,7 +496,7 @@ def _build_with_docker(
             # ARM64 architecture needs to pull AMD64 image (using --platform)
             pull_cmd.extend(["--platform", "linux/amd64"])
         pull_cmd.append(docker_image)
-        pull_result = subprocess.run(pull_cmd, capture_output=True, text=True)
+        pull_result = subprocess.run(pull_cmd, capture_output=True, text=True, timeout=120)
         if pull_result.returncode != 0:
             raise RuntimeError(f"Failed to pull Docker image {docker_image}: {pull_result.stderr}")
     

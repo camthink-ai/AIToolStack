@@ -85,9 +85,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onStartProject }) => {
                 className="dashboard-device-btn"
                 onClick={onStartProject}
                 style={{
-                  background: '#111',
-                  color: '#fff',
-                  borderColor: '#111'
+                  background: 'var(--primary-color)',
+                  color: 'var(--text-white)',
+                  borderColor: 'var(--primary-color)'
                 }}
               >
                 {t('dashboard.startProject', '开始创建项目')}

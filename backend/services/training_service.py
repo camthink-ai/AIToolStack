@@ -109,6 +109,12 @@ class LogCapture:
         # Convert to lowercase for matching
         msg_lower = message.lower()
         
+        # Explicitly ignore HTTP request/response logs
+        if message.startswith('[Request]') or message.startswith('[Response]'):
+            return False
+        if '/api/' in msg_lower or ' /api' in msg_lower:
+            return False
+
         # Training-related keywords
         training_keywords = [
             'epoch', 'train', 'val', 'loss', 'map', 'precision', 'recall',
@@ -129,6 +135,7 @@ class LogCapture:
             'mqtt', 'websocket', 'http', 'api', 'route', 'database',
             'sqlite', 'ne301', 'docker', 'mount', 'filesystem',
             'quantization', 'export', 'download', 'upload', 'annotation',
+            'request', 'response',
             # FastAPI/Uvicorn related
             'uvicorn', 'started server', 'application startup',
             'info:', 'warning:', 'error:', 'debug:',
@@ -195,7 +202,7 @@ class TrainingService:
         self.active_trainings: Dict[str, str] = {}
         # Training thread tracking: {training_id: thread}
         self.training_threads: Dict[str, threading.Thread] = {}
-        self.training_lock = threading.Lock()
+        self.training_lock = threading.RLock()  # Use RLock to allow re-entrant locking
     
     # ========= Database related utility methods =========
     def _persist_record(self, record: Dict):
@@ -276,6 +283,7 @@ class TrainingService:
         self,
         project_id: str,
         dataset_path: Path,
+        model_type: str = 'yolov8',
         model_size: str = 'n',
         epochs: int = 100,
         imgsz: int = 640,
@@ -310,6 +318,7 @@ class TrainingService:
         Args:
             project_id: Project ID
             dataset_path: Dataset path (contains data.yaml)
+            model_type: Model type ('yolov8', 'yolov11', 'yolov12', etc.)
             model_size: Model size ('n', 's', 'm', 'l', 'x')
             epochs: Number of training epochs
             imgsz: Image size
@@ -319,17 +328,26 @@ class TrainingService:
         Returns:
             Training information dictionary
         """
+        print(f"[TrainingService] start_training called for project {project_id}")
+        print(f"[TrainingService] Dataset path: {dataset_path}")
         with self.training_lock:
             if project_id in self.active_trainings:
-                raise ValueError(f"Training already in progress for project {project_id}")
+                error_msg = f"Training already in progress for project {project_id}"
+                print(f"[TrainingService] ERROR: {error_msg}")
+                raise ValueError(error_msg)
             
             # Check if dataset exists
             data_yaml = dataset_path / "data.yaml"
+            print(f"[TrainingService] Checking data.yaml at {data_yaml}")
             if not data_yaml.exists():
-                raise FileNotFoundError(f"data.yaml not found at {data_yaml}")
+                error_msg = f"data.yaml not found at {data_yaml}"
+                print(f"[TrainingService] ERROR: {error_msg}")
+                raise FileNotFoundError(error_msg)
+            print(f"[TrainingService] data.yaml found")
             
             # Generate training record ID
             training_id = f"{project_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            print(f"[TrainingService] Generated training_id: {training_id}")
             
             # Create training information
             training_info = {
@@ -337,6 +355,7 @@ class TrainingService:
                 'project_id': project_id,
                 'status': 'running',
                 'start_time': datetime.now().isoformat(),
+                'model_type': model_type,
                 'model_size': model_size,
                 'epochs': epochs,
                 'imgsz': imgsz,
@@ -357,23 +376,31 @@ class TrainingService:
             self.active_trainings[project_id] = training_id
             
             # Persist to database
+            print(f"[TrainingService] Persisting training record to database...")
             self._persist_record(training_info)
+            print(f"[TrainingService] Training record persisted")
             
             # Start training in background thread (pass training_id to generate unique directory name)
+            print(f"[TrainingService] Creating training thread...")
             thread = threading.Thread(
                 target=self._run_training,
-                args=(training_id, project_id, dataset_path, training_info, model_size, epochs, imgsz, batch, device,
+                args=(training_id, project_id, dataset_path, training_info, model_type, model_size, epochs, imgsz, batch, device,
                       lr0, lrf, optimizer, momentum, weight_decay, patience, workers, val, save_period, amp,
                       hsv_h, hsv_s, hsv_v, degrees, translate, scale, shear, perspective, flipud, fliplr, mosaic, mixup),
                 daemon=True,
                 name=f"TrainingThread-{training_id}"
             )
-            # Save thread reference for tracking
-            with self.training_lock:
-                self.training_threads[training_id] = thread
-            thread.start()
-            
-            return training_info
+            # Save thread reference for tracking (already inside lock, so no need to acquire again)
+            print(f"[TrainingService] Saving thread reference (already holding lock)...")
+            self.training_threads[training_id] = thread
+            print(f"[TrainingService] Thread reference saved")
+        
+        # Release lock before starting thread (thread.start() can be slow)
+        print(f"[TrainingService] Lock released, starting training thread...")
+        thread.start()
+        print(f"[TrainingService] Training thread started, returning training_info")
+        
+        return training_info
     
     def _run_training(
         self,
@@ -381,6 +408,7 @@ class TrainingService:
         project_id: str,
         dataset_path: Path,
         training_info: Dict,
+        model_type: str,
         model_size: str,
         epochs: int,
         imgsz: int,
@@ -410,6 +438,7 @@ class TrainingService:
         mixup: Optional[float] = None,
     ):
         """Run training in background thread"""
+        print(f"[TrainingThread-{training_id}] Thread started, beginning training process")
         record_for_db = None
         training_success = False
         try:
@@ -437,7 +466,8 @@ class TrainingService:
                 self._add_log(training_id, project_id, "=" * 60)
                 self._add_log(training_id, project_id, "Training task started")
                 self._add_log(training_id, project_id, "=" * 60)
-                self._add_log(training_id, project_id, f"Model: yolov8{model_size}.pt")
+                self._add_log(training_id, project_id, f"Model Type: {model_type}")
+                self._add_log(training_id, project_id, f"Model: {model_type}{model_size}.pt")
                 self._add_log(training_id, project_id, f"Epochs: {epochs}")
                 self._add_log(training_id, project_id, f"Batch Size: {batch}")
                 self._add_log(training_id, project_id, f"Image Size: {imgsz}")
@@ -456,10 +486,10 @@ class TrainingService:
                 self._add_log(training_id, project_id, "-" * 60)
                 
                 # Load pretrained model (ultralytics will handle download automatically)
-                # Use model name (e.g., 'yolov8n') instead of filename ('yolov8n.pt'),
+                # Use model name (e.g., 'yolov8n', 'yolov11n') instead of filename,
                 # so ultralytics will automatically download weights from GitHub
-                model_name_str = f'yolov8{model_size}'
-                model_file_name = f'yolov8{model_size}.pt'
+                model_name_str = f'{model_type}{model_size}'
+                model_file_name = f'{model_type}{model_size}.pt'
                 self._add_log(training_id, project_id, f"Loading pretrained model: {model_file_name}")
                 
                 try:
@@ -721,12 +751,20 @@ class TrainingService:
                 metrics = json.loads(db_obj.metrics)
             except Exception:
                 metrics = {}
+        # Get model_type from memory if available, otherwise default to 'yolov8' for backward compatibility
+        model_type = 'yolov8'
+        if db_obj.project_id in self.training_records:
+            for record in self.training_records[db_obj.project_id]:
+                if record.get('training_id') == db_obj.training_id:
+                    model_type = record.get('model_type', 'yolov8')
+                    break
         return {
             'training_id': db_obj.training_id,
             'project_id': db_obj.project_id,
             'status': db_obj.status,
             'start_time': db_obj.start_time.isoformat() if db_obj.start_time else None,
             'end_time': db_obj.end_time.isoformat() if db_obj.end_time else None,
+            'model_type': model_type,
             'model_size': db_obj.model_size,
             'epochs': db_obj.epochs,
             'imgsz': db_obj.imgsz,

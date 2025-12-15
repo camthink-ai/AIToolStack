@@ -70,6 +70,13 @@
     "quantizeModel": "Quantize (TFLite & CamThink NE301)",
     "noTrainingSelected": "Please select a training record or start a new training",
     "noRecords": "No training records",
+    "modelType": "Model Type",
+    "modelTypeOptions": {
+      "yolov8": "YOLOv8",
+      "yolov11": "YOLOv11",
+      "yolov12": "YOLOv12"
+    },
+    "modelSize": "Model Size",
     "modelSizeOptions": {
       "n": "Nano (Fastest, Smallest)",
       "s": "Small",
@@ -82,6 +89,7 @@
     "imageSizeLabel": "Image Size",
     "deviceLabel": "Device",
     "devicePlaceholder": "Leave empty for auto (cpu/cuda/0/1/mps...)",
+    "optional": "Optional",
     "startTraining": "Start Training",
     "startTrainingFailed": "Failed to start training",
     "test": {
@@ -270,7 +278,15 @@
     "annotations": "Annotations",
     "deleteConfirm": "Are you sure you want to delete this annotation?",
     "create": "Create",
-    "noData": "No data"
+    "noData": "No data",
+    "hint": {
+      "bboxStart": "Click and drag to draw a bounding box",
+      "bboxDrawing": "Drag mouse to draw rectangle, release to finish",
+      "polygonStart": "Click to start drawing polygon",
+      "polygonDrawing": "Drawing polygon ({{count}} points) - Click to add point, click start point/double-click/Enter to finish, ESC/right-click to cancel",
+      "keypointStart": "Click to add keypoint",
+      "keypointDrawing": "Drawing keypoints ({{count}} points) - Click to add point, right-click/double-click to finish, ESC/Backspace to delete last point"
+    }
   },
   "language": {
     "switch": "Switch Language",
@@ -375,5 +391,84 @@
     "keySave": "Ctrl+S",
     "keyEsc": "Esc",
     "keyEnter": "Enter"
+  },
+  "mqtt": {
+    "title": "MQTT",
+    "serviceDisabled": "MQTT service is disabled. Please enable MQTT service in server configuration.",
+    "usingBuiltin": "Using <strong>Built-in MQTT Broker</strong>, no additional configuration needed. You can also switch to external Broker.",
+    "usingExternal": "Currently using <strong>External MQTT Broker</strong>. To use built-in Broker, please enable it in server configuration.",
+    "projectInfo": "Project Information",
+    "serverAddress": "Server Address:",
+    "projectId": "Project ID:",
+    "mqttTopic": "MQTT Topic:",
+    "mqttBroker": "MQTT Broker:",
+    "builtin": "Built-in",
+    "external": "External",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyCode": "Copy Code",
+    "testing": "Testing...",
+    "testConnection": "Test Connection",
+    "testFailed": "Test failed: {{error}}",
+    "solution": "Solution:",
+    "builtinStartFailed": "Built-in MQTT Broker failed to start, please check:",
+    "externalRequired": "This system requires an external MQTT Broker, please install and start:",
+    "macOSHomebrew": "macOS (using Homebrew) - Recommended",
+    "installMosquitto": "# Install Mosquitto",
+    "startMosquitto": "# Start Mosquitto (background)",
+    "runMosquitto": "# Or run in foreground (for debugging)",
+    "verifyBroker": "# Verify Broker is running",
+    "dockerEasiest": "Using Docker - Easiest",
+    "runMosquittoDocker": "# Run Mosquitto (foreground, press Ctrl+C to stop)",
+    "runMosquittoDockerBg": "# Or run in background",
+    "linuxUbuntu": "Linux (Ubuntu/Debian)",
+    "install": "# Install",
+    "startService": "# Start service",
+    "checkStatus": "# Check status",
+    "verifyConnection": "Verify Connection",
+    "subscribeTest": "# Subscribe test in one terminal",
+    "publishTest": "# Publish test in another terminal",
+    "troubleshooting": {
+      "ensureRunning": "Ensure MQTT Broker is running (e.g., Mosquitto, EMQX, etc.)",
+      "checkAddress": "Check if Broker address and port configuration are correct",
+      "checkFirewall": "Confirm firewall is not blocking port {{port}}",
+      "checkDocker": "If using Docker, ensure ports are correctly mapped",
+      "checkAuth": "Check if MQTT username and password are correct (if authentication is configured)"
+    },
+    "usage": {
+      "title": "Usage Instructions",
+      "connect": "Connect to MQTT Broker:",
+      "publish": "Publish message to Topic:",
+      "format": "Message format is JSON, containing image data (Base64 encoded)",
+      "autoSave": "Server will automatically save images to current project"
+    },
+    "example": {
+      "title": "Message Format Example",
+      "jsonFormat": "JSON Message Format"
+    },
+    "fields": {
+      "title": "Field Description",
+      "field": "Field",
+      "type": "Type",
+      "description": "Description",
+      "reqId": "Request unique identifier (UUID)",
+      "deviceId": "Device identifier",
+      "timestamp": "Unix timestamp (seconds)",
+      "filename": "Image filename",
+      "format": "Image format (jpg, png, etc.)",
+      "encoding": "Encoding method (base64)",
+      "data": "Base64 encoded image data",
+      "metadata": "Optional metadata information"
+    },
+    "response": {
+      "title": "Response Description",
+      "description": "Server will return response message in Topic",
+      "success": "Success response:",
+      "error": "Error response:",
+      "returnResponse": "return response message:"
+    },
+    "getting": "Getting...",
+    "connected": "Connected",
+    "disconnected": "Disconnected"
   }
 }

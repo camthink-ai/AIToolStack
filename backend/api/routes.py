@@ -62,6 +62,7 @@ class ProjectResponse(BaseModel):
 
 
 class TrainingRequest(BaseModel):
+    model_type: str = 'yolov8'  # 'yolov8', 'yolov11', 'yolov12', etc.
     model_size: str = 'n'  # 'n', 's', 'm', 'l', 'x'
     epochs: int = 100
     imgsz: int = 640
@@ -1063,8 +1064,18 @@ def export_dataset_zip(project_id: str, db: Session = Depends(get_db)):
 # ========== Model Training ==========
 
 @router.post("/projects/{project_id}/train")
-def start_training(project_id: str, request: TrainingRequest, db: Session = Depends(get_db)):
+async def start_training(project_id: str, request: TrainingRequest, db: Session = Depends(get_db)):
     """Start model training: automatically export latest YOLO dataset from current project data and train"""
+    import asyncio
+    import logging
+    from concurrent.futures import ThreadPoolExecutor
+    
+    logger = logging.getLogger(__name__)
+    print(f"[Training] Received training request for project {project_id}")
+    print(f"[Training] Request parameters: model_size={request.model_size}, epochs={request.epochs}, batch={request.batch}")
+    logger.info(f"[Training] Received training request for project {project_id}")
+    logger.info(f"[Training] Request parameters: model_size={request.model_size}, epochs={request.epochs}, batch={request.batch}")
+    
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -1105,23 +1116,56 @@ def start_training(project_id: str, request: TrainingRequest, db: Session = Depe
             "annotations": ann_list
         })
     
-    # Export YOLO dataset (overwrite old yolo_export)
+    # Export YOLO dataset (overwrite old yolo_export) - run in thread pool to avoid blocking
     yolo_export_dir = settings.DATASETS_ROOT / project_id / "yolo_export"
+    print(f"[Training] Preparing to export dataset to {yolo_export_dir}")
+    print(f"[Training] Project data: {len(project_data['images'])} images, {len(project_data['classes'])} classes")
     try:
-        YOLOExporter.export_project(project_data, yolo_export_dir, settings.DATASETS_ROOT)
+        # Run export in thread pool to avoid blocking the request
+        # Use get_running_loop() instead of get_event_loop() for better compatibility with FastAPI
+        print(f"[Training] Starting dataset export in thread pool...")
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(
+                executor,
+                YOLOExporter.export_project,
+                project_data,
+                yolo_export_dir,
+                settings.DATASETS_ROOT
+            )
+        print(f"[Training] Dataset export completed successfully")
+    except RuntimeError as e:
+        # Fallback if no running loop (should not happen in FastAPI async context)
+        error_msg = f"Event loop error: {str(e)}"
+        print(f"[Training] ERROR: {error_msg}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=error_msg)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Auto export dataset failed: {str(e)}")
+        error_msg = f"Auto export dataset failed: {str(e)}"
+        print(f"[Training] ERROR: {error_msg}")
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=error_msg)
     
     # data.yaml path
     data_yaml = yolo_export_dir / "data.yaml"
+    print(f"[Training] Checking for data.yaml at {data_yaml}")
     if not data_yaml.exists():
-        raise HTTPException(status_code=500, detail="Missing data.yaml after auto export")
+        error_msg = f"Missing data.yaml after auto export at {data_yaml}"
+        print(f"[Training] ERROR: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
+    print(f"[Training] data.yaml found, proceeding to start training")
     
-    # Start training using latest exported dataset
+    # Start training using latest exported dataset - this is fast, just creates a thread
+    print(f"[Training] Starting training service for project {project_id}")
+    logger.info(f"[Training] Starting training service for project {project_id}")
     try:
+        print(f"[Training] Calling training_service.start_training()...")
         training_info = training_service.start_training(
             project_id=project_id,
             dataset_path=yolo_export_dir,
+            model_type=request.model_type,
             model_size=request.model_size,
             epochs=request.epochs,
             imgsz=request.imgsz,
@@ -1150,11 +1194,22 @@ def start_training(project_id: str, request: TrainingRequest, db: Session = Depe
             mosaic=request.mosaic,
             mixup=request.mixup,
         )
+        training_id = training_info.get('training_id')
+        print(f"[Training] Training started successfully. Training ID: {training_id}")
+        logger.info(f"[Training] Training started successfully. Training ID: {training_id}")
         return training_info
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        error_msg = str(e)
+        print(f"[Training] ValueError when starting training: {error_msg}")
+        logger.error(f"[Training] ValueError when starting training: {error_msg}")
+        raise HTTPException(status_code=400, detail=error_msg)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start training: {str(e)}")
+        error_msg = str(e)
+        print(f"[Training] Exception when starting training: {error_msg}")
+        import traceback
+        print(traceback.format_exc())
+        logger.error(f"[Training] Exception when starting training: {error_msg}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start training: {error_msg}")
 
 
 @router.get("/projects/{project_id}/train/records")
@@ -1292,6 +1347,7 @@ def export_tflite_model(
         ne301_path: Optional[str] = None
         ne301_model_bin_path: Optional[str] = None
         ne301_json_path: Optional[str] = None
+        ne301_model_bin_error: Optional[str] = None
         
         if ne301:
             # Add NE301 quantization step: generate config and call stm32ai script
@@ -1569,6 +1625,7 @@ def export_tflite_model(
                 logger.error(f"[NE301] Model package build failed: {e}", exc_info=True)
                 print(f"[NE301] ✗ Model package build failed: {type(e).__name__}: {e}")
                 print(f"[NE301] Note: TFLite and JSON files have been generated and are available for download")
+                ne301_model_bin_error = str(e)
                 if ne301_path:
                     print(f"[NE301]   - TFLite: {ne301_path}")
                 if 'ne301_json_path' in locals() and ne301_json_path:
@@ -1620,6 +1677,9 @@ def export_tflite_model(
                     logger.info(f"[NE301] ✓ Model package generated and available for download: {ne301_model_bin_path} (size: {file_size} bytes)")
                 else:
                     logger.warning(f"[NE301] ⚠️ Model package does not exist (compilation may have failed): {ne301_model_bin_path}")
+            elif ne301_model_bin_error:
+                # Expose build failure reason so frontend can inform user
+                result["ne301_model_bin_error"] = ne301_model_bin_error
         
         # Verify original TFLite file
         export_path_obj = Path(export_path)

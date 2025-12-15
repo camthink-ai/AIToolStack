@@ -14,6 +14,7 @@ interface TrainingRecord {
   status: 'not_started' | 'running' | 'completed' | 'failed' | 'stopped';
   start_time?: string;
   end_time?: string;
+  model_type?: string;
   model_size?: string;
   epochs?: number;
   imgsz?: number;
@@ -39,6 +40,7 @@ interface TrainingRecord {
 }
 
 interface TrainingRequest {
+  model_type: string;
   model_size: string;
   epochs: number;
   imgsz: number;
@@ -98,25 +100,22 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   const quantTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const quantTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [trainingConfig, setTrainingConfig] = useState<TrainingRequest>({
+    model_type: 'yolov8',
     model_size: 'n',
     epochs: 100,
     imgsz: 640,
     batch: 16,
     device: undefined,
-    // Learning rate related
     lr0: undefined,
     lrf: undefined,
-    // Optimizer related
     optimizer: undefined,
     momentum: undefined,
     weight_decay: undefined,
-    // Training control
     patience: undefined,
     workers: undefined,
-    val: undefined,
+    val: true,
     save_period: undefined,
-    amp: undefined,
-    // Data augmentation (advanced options)
+    amp: true,
     hsv_h: undefined,
     hsv_s: undefined,
     hsv_v: undefined,
@@ -130,8 +129,10 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
     mosaic: undefined,
     mixup: undefined,
   });
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  
+  const [epochsInput, setEpochsInput] = useState('');
+  const [imgszInput, setImgszInput] = useState('');
+  const [batchInput, setBatchInput] = useState('');
+
   const logsEndRef = useRef<HTMLDivElement>(null);
   const recordsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const logsIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -307,29 +308,72 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   const handleStartTraining = async () => {
     setIsLoading(true);
     try {
+      // Add timeout to prevent hanging (increased to 5 minutes for dataset export)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for dataset export
+      
       const response = await fetch(`${API_BASE_URL}/projects/${projectId}/train`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(trainingConfig),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Failed to start training');
+        let errorMessage = 'Failed to start training';
+        try {
+          const error = await response.json();
+          errorMessage = error.detail || errorMessage;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
       // After training starts, immediately refresh training record list
       setShowConfigModal(false);
-      // Reset configuration
+      // Reset configuration to initial state
+      setEpochsInput('');
+      setImgszInput('');
+      setBatchInput('');
       setTrainingConfig({
+        model_type: 'yolov8',
         model_size: 'n',
         epochs: 100,
         imgsz: 640,
         batch: 16,
-        device: undefined
+        device: undefined,
+        // Learning rate related
+        lr0: undefined,
+        lrf: undefined,
+        // Optimizer related
+        optimizer: undefined,
+        momentum: undefined,
+        weight_decay: undefined,
+        // Training control
+        patience: undefined,
+        workers: undefined,
+        val: undefined,
+        save_period: undefined,
+        amp: undefined,
+        // Data augmentation (advanced options)
+        hsv_h: undefined,
+        hsv_s: undefined,
+        hsv_v: undefined,
+        degrees: undefined,
+        translate: undefined,
+        scale: undefined,
+        shear: undefined,
+        perspective: undefined,
+        flipud: undefined,
+        fliplr: undefined,
+        mosaic: undefined,
+        mixup: undefined,
       });
       
       // Immediately refresh training record list to display newly created record
@@ -340,7 +384,12 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
         setSelectedTrainingId(data.training_id);
       }
     } catch (error: any) {
-      alert(`${t('training.startTrainingFailed')}: ${error.message}`);
+      console.error('Training start error:', error);
+      if (error.name === 'AbortError') {
+        alert(`${t('training.startTrainingFailed')}: Request timeout. Please check if the server is responding.`);
+      } else {
+        alert(`${t('training.startTrainingFailed')}: ${error.message || 'Unknown error'}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -564,8 +613,8 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   const isFailed = currentStatus?.status === 'failed';
 
   return (
-    <div className="training-panel-overlay" onClick={onClose}>
-      <div className="training-panel-fullscreen" onClick={(e) => e.stopPropagation()}>
+    <div className="training-panel-overlay">
+      <div className="training-panel-fullscreen">
         <div className="training-panel-header">
           <h2>{t('training.title')}</h2>
           <button className="close-btn" onClick={onClose}>
@@ -579,7 +628,6 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
             {/* 训练记录列表 */}
             <div className="training-records-section">
               <div className="records-header">
-                <h3>{t('training.title')}</h3>
                 <button 
                   className="btn-new-training"
                   onClick={() => setShowConfigModal(true)}
@@ -690,8 +738,8 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                     {currentStatus.model_size && (
                       <div className="status-item">
-                        <span className="status-label">{t('training.modelSize')}:</span>
-                        <span className="status-value">yolov8{currentStatus.model_size}</span>
+                        <span className="status-label">{t('training.modelType')}:</span>
+                        <span className="status-value">{currentStatus.model_type || 'yolov8'}{currentStatus.model_size}</span>
                       </div>
                     )}
 
@@ -823,8 +871,22 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
               </div>
               
               <div className="config-modal-content">
-                <div className="config-item">
-                  <label>{t('training.modelSize')}</label>
+                <div className="form-container grid-layout">
+                <div className="form-item config-item">
+                  <label className="required">{t('training.modelType')}</label>
+                  <select
+                    value={trainingConfig.model_type}
+                    onChange={(e) => setTrainingConfig({ ...trainingConfig, model_type: e.target.value })}
+                    disabled={isLoading}
+                  >
+                    <option value="yolov8">{t('training.modelTypeOptions.yolov8')}</option>
+                    {/* <option value="yolov11">{t('training.modelTypeOptions.yolov11')}</option>
+                    <option value="yolov12">{t('training.modelTypeOptions.yolov12')}</option> */}
+                  </select>
+                </div>
+
+                <div className="form-item config-item">
+                  <label className="required">{t('training.modelSize')}</label>
                   <select
                     value={trainingConfig.model_size}
                     onChange={(e) => setTrainingConfig({ ...trainingConfig, model_size: e.target.value })}
@@ -838,93 +900,120 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                   </select>
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.epochsLabel')}</label>
+                <div className="form-item config-item">
+                  <label className="required">{t('training.epochsLabel')}</label>
                   <input
                     type="number"
                     min="1"
                     max="1000"
-                    value={trainingConfig.epochs}
+                    value={epochsInput === '' ? trainingConfig.epochs : epochsInput}
                     onChange={(e) => {
                       const value = e.target.value;
-                      if (value === '') {
-                        setTrainingConfig({ ...trainingConfig, epochs: 0 });
-                      } else {
+                      setEpochsInput(value);
+                      if (value !== '' && value !== '-') {
                         const numValue = parseInt(value, 10);
-                        if (!isNaN(numValue) && numValue >= 1) {
+                        if (!isNaN(numValue) && numValue >= 1 && numValue <= 1000) {
                           setTrainingConfig({ ...trainingConfig, epochs: numValue });
                         }
                       }
                     }}
                     onBlur={(e) => {
-                      const value = parseInt(e.target.value, 10);
-                      if (isNaN(value) || value < 1) {
+                      const value = e.target.value;
+                      const numValue = parseInt(value, 10);
+                      if (value === '' || isNaN(numValue) || numValue < 1) {
                         setTrainingConfig({ ...trainingConfig, epochs: 100 });
+                        setEpochsInput('');
+                      } else if (numValue > 1000) {
+                        setTrainingConfig({ ...trainingConfig, epochs: 1000 });
+                        setEpochsInput('');
+                      } else {
+                        setEpochsInput('');
                       }
+                    }}
+                    onFocus={(e) => {
+                      setEpochsInput(trainingConfig.epochs.toString());
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.imageSizeLabel')}</label>
+                <div className="form-item config-item">
+                  <label className="required">{t('training.imageSizeLabel')}</label>
                   <input
                     type="number"
                     min="320"
                     max="1280"
                     step="32"
-                    value={trainingConfig.imgsz}
+                    value={imgszInput === '' ? trainingConfig.imgsz : imgszInput}
                     onChange={(e) => {
                       const value = e.target.value;
-                      if (value === '') {
-                        setTrainingConfig({ ...trainingConfig, imgsz: 0 });
-                      } else {
+                      setImgszInput(value);
+                      if (value !== '' && value !== '-') {
                         const numValue = parseInt(value, 10);
-                        if (!isNaN(numValue) && numValue >= 320) {
+                        if (!isNaN(numValue) && numValue >= 320 && numValue <= 1280) {
                           setTrainingConfig({ ...trainingConfig, imgsz: numValue });
                         }
                       }
                     }}
                     onBlur={(e) => {
-                      const value = parseInt(e.target.value, 10);
-                      if (isNaN(value) || value < 320) {
+                      const value = e.target.value;
+                      const numValue = parseInt(value, 10);
+                      if (value === '' || isNaN(numValue) || numValue < 320) {
                         setTrainingConfig({ ...trainingConfig, imgsz: 640 });
+                        setImgszInput('');
+                      } else if (numValue > 1280) {
+                        setTrainingConfig({ ...trainingConfig, imgsz: 1280 });
+                        setImgszInput('');
+                      } else {
+                        setImgszInput('');
                       }
+                    }}
+                    onFocus={(e) => {
+                      setImgszInput(trainingConfig.imgsz.toString());
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.batchSizeLabel')}</label>
+                <div className="form-item config-item">
+                  <label className="required">{t('training.batchSizeLabel')}</label>
                   <input
                     type="number"
                     min="1"
                     max="64"
-                    value={trainingConfig.batch}
+                    value={batchInput === '' ? trainingConfig.batch : batchInput}
                     onChange={(e) => {
                       const value = e.target.value;
-                      if (value === '') {
-                        setTrainingConfig({ ...trainingConfig, batch: 0 });
-                      } else {
+                      setBatchInput(value);
+                      if (value !== '' && value !== '-') {
                         const numValue = parseInt(value, 10);
-                        if (!isNaN(numValue) && numValue >= 1) {
+                        if (!isNaN(numValue) && numValue >= 1 && numValue <= 64) {
                           setTrainingConfig({ ...trainingConfig, batch: numValue });
                         }
                       }
                     }}
                     onBlur={(e) => {
-                      const value = parseInt(e.target.value, 10);
-                      if (isNaN(value) || value < 1) {
+                      const value = e.target.value;
+                      const numValue = parseInt(value, 10);
+                      if (value === '' || isNaN(numValue) || numValue < 1) {
                         setTrainingConfig({ ...trainingConfig, batch: 16 });
+                        setBatchInput('');
+                      } else if (numValue > 64) {
+                        setTrainingConfig({ ...trainingConfig, batch: 64 });
+                        setBatchInput('');
+                      } else {
+                        setBatchInput('');
                       }
+                    }}
+                    onFocus={(e) => {
+                      setBatchInput(trainingConfig.batch.toString());
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.deviceLabel')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.deviceLabel')}</label>
                   <input
                     type="text"
                     placeholder={t('training.devicePlaceholder', '留空自动选择 (cpu/cuda/0/1/mps...)')}
@@ -935,12 +1024,12 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                 </div>
 
                 {/* 学习率参数 */}
-                <div className="config-section-divider">
+                <div className="form-section-divider config-section-divider">
                   <span>{t('training.learningRate.title')}</span>
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.learningRate.lr0')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.learningRate.lr0')}</label>
                   <input
                     type="number"
                     step="0.0001"
@@ -950,14 +1039,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     value={trainingConfig.lr0 ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setTrainingConfig({ ...trainingConfig, lr0: value === '' ? undefined : parseFloat(value) });
+                      if (value === '') {
+                        setTrainingConfig({ ...trainingConfig, lr0: undefined });
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue) && numValue >= 0.0001 && numValue <= 1) {
+                          setTrainingConfig({ ...trainingConfig, lr0: numValue });
+                        }
+                      }
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.learningRate.lrf')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.learningRate.lrf')}</label>
                   <input
                     type="number"
                     step="0.0001"
@@ -967,19 +1063,26 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     value={trainingConfig.lrf ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setTrainingConfig({ ...trainingConfig, lrf: value === '' ? undefined : parseFloat(value) });
+                      if (value === '') {
+                        setTrainingConfig({ ...trainingConfig, lrf: undefined });
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue) && numValue >= 0.0001 && numValue <= 1) {
+                          setTrainingConfig({ ...trainingConfig, lrf: numValue });
+                        }
+                      }
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
                 {/* 优化器参数 */}
-                <div className="config-section-divider">
+                <div className="form-section-divider config-section-divider">
                   <span>{t('training.optimizer.title')}</span>
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.optimizer.label')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.optimizer.label')}</label>
                   <select
                     value={trainingConfig.optimizer || ''}
                     onChange={(e) => setTrainingConfig({ ...trainingConfig, optimizer: e.target.value || undefined })}
@@ -993,8 +1096,8 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                   </select>
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.optimizer.momentum')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.optimizer.momentum')}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -1004,14 +1107,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     value={trainingConfig.momentum ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setTrainingConfig({ ...trainingConfig, momentum: value === '' ? undefined : parseFloat(value) });
+                      if (value === '') {
+                        setTrainingConfig({ ...trainingConfig, momentum: undefined });
+                      } else {
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
+                          setTrainingConfig({ ...trainingConfig, momentum: numValue });
+                        }
+                      }
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.optimizer.weightDecay')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.optimizer.weightDecay')}</label>
                   <input
                     type="number"
                     step="0.0001"
@@ -1028,12 +1138,12 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                 </div>
 
                 {/* 训练控制参数 */}
-                <div className="config-section-divider">
+                <div className="form-section-divider config-section-divider">
                   <span>{t('training.control.title')}</span>
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.control.patience')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.control.patience')}</label>
                   <input
                     type="number"
                     min="0"
@@ -1042,14 +1152,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     value={trainingConfig.patience ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setTrainingConfig({ ...trainingConfig, patience: value === '' ? undefined : parseInt(value, 10) });
+                      if (value === '') {
+                        setTrainingConfig({ ...trainingConfig, patience: undefined });
+                      } else {
+                        const numValue = parseInt(value, 10);
+                        if (!isNaN(numValue) && numValue >= 0 && numValue <= 1000) {
+                          setTrainingConfig({ ...trainingConfig, patience: numValue });
+                        }
+                      }
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.control.workers')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.control.workers')}</label>
                   <input
                     type="number"
                     min="0"
@@ -1058,13 +1175,20 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     value={trainingConfig.workers ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setTrainingConfig({ ...trainingConfig, workers: value === '' ? undefined : parseInt(value, 10) });
+                      if (value === '') {
+                        setTrainingConfig({ ...trainingConfig, workers: undefined });
+                      } else {
+                        const numValue = parseInt(value, 10);
+                        if (!isNaN(numValue) && numValue >= 0 && numValue <= 16) {
+                          setTrainingConfig({ ...trainingConfig, workers: numValue });
+                        }
+                      }
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
-                <div className="config-item checkbox-row">
+                <div className="form-item config-item checkbox-row">
                   <label>
                     <input
                       type="checkbox"
@@ -1076,7 +1200,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                   </label>
                 </div>
 
-                <div className="config-item checkbox-row">
+                <div className="form-item config-item checkbox-row">
                   <label>
                     <input
                       type="checkbox"
@@ -1088,8 +1212,8 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                   </label>
                 </div>
 
-                <div className="config-item">
-                  <label>{t('training.control.savePeriod')}</label>
+                <div className="form-item config-item">
+                  <label className="optional" data-optional-text={t('training.optional')}>{t('training.control.savePeriod')}</label>
                   <input
                     type="number"
                     min="-1"
@@ -1098,29 +1222,27 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     value={trainingConfig.save_period ?? ''}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setTrainingConfig({ ...trainingConfig, save_period: value === '' ? undefined : parseInt(value, 10) });
+                      if (value === '') {
+                        setTrainingConfig({ ...trainingConfig, save_period: undefined });
+                      } else {
+                        const numValue = parseInt(value, 10);
+                        if (!isNaN(numValue) && numValue >= -1 && numValue <= 100) {
+                          setTrainingConfig({ ...trainingConfig, save_period: numValue });
+                        }
+                      }
                     }}
                     disabled={isLoading}
                   />
                 </div>
 
                 {/* 高级选项 - 数据增强 */}
-                <div className="config-section-divider">
-                  <button
-                    type="button"
-                    className="advanced-toggle"
-                    onClick={() => setShowAdvanced(!showAdvanced)}
-                    disabled={isLoading}
-                  >
-                    <span>{showAdvanced ? '▼' : '▶'}</span>
-                    <span>{t('training.advanced.title')}</span>
-                  </button>
+                <div className="form-section-divider config-section-divider">
+                  <span>{t('training.advanced.title')}</span>
                 </div>
 
-                {showAdvanced && (
-                  <>
-                    <div className="config-item">
-                      <label>{t('training.advanced.hsvH')}</label>
+                <>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.hsvH')}</label>
                       <input
                         type="number"
                         step="0.001"
@@ -1130,14 +1252,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.hsv_h ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, hsv_h: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, hsv_h: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 0.1) {
+                              setTrainingConfig({ ...trainingConfig, hsv_h: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.hsvS')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.hsvS')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1147,14 +1276,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.hsv_s ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, hsv_s: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, hsv_s: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
+                              setTrainingConfig({ ...trainingConfig, hsv_s: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.hsvV')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.hsvV')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1164,14 +1300,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.hsv_v ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, hsv_v: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, hsv_v: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
+                              setTrainingConfig({ ...trainingConfig, hsv_v: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.degrees')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.degrees')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1181,14 +1324,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.degrees ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, degrees: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, degrees: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 45) {
+                              setTrainingConfig({ ...trainingConfig, degrees: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.translate')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.translate')}</label>
                       <input
                         type="number"
                         step="0.01"
@@ -1198,14 +1348,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.translate ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, translate: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, translate: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 0.5) {
+                              setTrainingConfig({ ...trainingConfig, translate: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.scale')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.scale')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1215,14 +1372,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.scale ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, scale: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, scale: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
+                              setTrainingConfig({ ...trainingConfig, scale: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.shear')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.shear')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1232,13 +1396,20 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.shear ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, shear: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, shear: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 10) {
+                              setTrainingConfig({ ...trainingConfig, shear: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
+                    <div className="form-item config-item">
                       <label>{t('training.advanced.perspective')}</label>
                       <input
                         type="number"
@@ -1249,14 +1420,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.perspective ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, perspective: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, perspective: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 0.01) {
+                              setTrainingConfig({ ...trainingConfig, perspective: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.flipud')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.flipud')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1266,14 +1444,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.flipud ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, flipud: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, flipud: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
+                              setTrainingConfig({ ...trainingConfig, flipud: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.fliplr')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.fliplr')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1283,14 +1468,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.fliplr ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, fliplr: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, fliplr: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
+                              setTrainingConfig({ ...trainingConfig, fliplr: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.mosaic')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.mosaic')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1300,14 +1492,21 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         value={trainingConfig.mosaic ?? ''}
                         onChange={(e) => {
                           const value = e.target.value;
-                          setTrainingConfig({ ...trainingConfig, mosaic: value === '' ? undefined : parseFloat(value) });
+                          if (value === '') {
+                            setTrainingConfig({ ...trainingConfig, mosaic: undefined });
+                          } else {
+                            const numValue = parseFloat(value);
+                            if (!isNaN(numValue) && numValue >= 0 && numValue <= 1) {
+                              setTrainingConfig({ ...trainingConfig, mosaic: numValue });
+                            }
+                          }
                         }}
                         disabled={isLoading}
                       />
                     </div>
 
-                    <div className="config-item">
-                      <label>{t('training.advanced.mixup')}</label>
+                    <div className="form-item config-item">
+                      <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.mixup')}</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1322,8 +1521,8 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         disabled={isLoading}
                       />
                     </div>
-                  </>
-                )}
+                </>
+                </div>
               </div>
 
               <div className="config-modal-actions">

@@ -1,43 +1,42 @@
+/* Training panel - fullscreen layout (not modal) */
 .training-panel-overlay {
   position: fixed;
-  top: 64px;
+  top: var(--header-height);
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: var(--bg-primary);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 999; /* 低于顶部导航栏(1000)，但高于标注界面内容 */
+  flex-direction: column;
+  /* Keep below top navigation and popovers (language switcher) */
+  z-index: var(--z-base);
+  overflow: hidden;
 }
 
 .training-panel-fullscreen {
-  background: var(--bg-primary);
-  width: calc(100vw - 40px);
-  height: calc(100vh - 104px);
-  max-width: none;
-  max-height: none;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  border-radius: 8px;
   overflow: hidden;
+  padding: var(--spacing-xl);
+  max-width: var(--content-max-width);
+  margin: 0 auto;
 }
 
 .training-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
+  margin-bottom: var(--spacing-2xl);
   flex-shrink: 0;
 }
 
 .training-panel-header h2 {
   margin: 0;
-  font-size: 20px;
-  color: var(--text-primary);
-  font-weight: 600;
+  font-size: var(--font-size-3xl);
+  color: var(--primary-color);
+  font-weight: var(--font-weight-semibold);
 }
 
 .close-btn {
@@ -50,8 +49,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  transition: all 0.2s;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
 }
 
 .close-btn svg {
@@ -72,7 +71,7 @@
   min-height: 0;
 }
 
-/* 左侧面板 */
+/* Left panel */
 .training-panel-left {
   width: 350px;
   border-right: 1px solid var(--border-color);
@@ -82,26 +81,22 @@
 }
 
 .training-records-section {
-  padding: 16px;
+  padding: var(--spacing-lg);
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .records-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  margin-bottom: 12px;
-}
-
-.records-header h3 {
-  margin: 0;
-  font-size: 14px;
-  color: var(--text-primary);
-  font-weight: 600;
+  margin-bottom: var(--spacing-md);
 }
 
 .btn-new-training {
@@ -110,16 +105,16 @@
   padding: var(--btn-padding-sm);
   background: var(--primary-color);
   border: none;
-  border-radius: 4px;
-  color: white;
+  border-radius: var(--radius-sm);
+  color: var(--text-white);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -127,7 +122,7 @@
 .btn-new-training:hover:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .btn-new-training:disabled {
@@ -138,109 +133,113 @@
 .training-records-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--spacing-md);
 }
 
 .empty-records {
-  padding: 20px;
+  padding: var(--spacing-xl);
   text-align: center;
   color: var(--text-light);
-  font-size: 13px;
+  font-size: var(--font-size-base);
 }
 
 .training-record-item {
-  padding: 12px;
-  background: var(--bg-secondary);
+  padding: var(--spacing-lg);
+  background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   position: relative;
+  box-shadow: var(--shadow-sm);
 }
 
 .training-record-item:hover {
   border-color: var(--primary-color);
-  background: rgba(10, 13, 22, 0.05);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .training-record-item.active {
   border-color: var(--primary-color);
-  background: rgba(10, 13, 22, 0.1);
+  background: var(--primary-lighter);
   border-width: 2px;
+  box-shadow: var(--shadow-primary);
 }
 
 .record-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--spacing-sm);
 }
 
 .record-time {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-light);
 }
 
 .record-status {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-weight: 500;
+  font-size: var(--font-size-xs);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  font-weight: var(--font-weight-medium);
 }
 
 .record-status.status-running {
-  background: rgba(76, 175, 80, 0.2);
-  color: #4CAF50;
+  background: var(--success-light);
+  color: var(--success-color);
 }
 
 .record-status.status-completed {
-  background: rgba(10, 13, 22, 0.1);
+  background: var(--primary-light);
   color: var(--primary-color);
 }
 
 .record-status.status-failed {
-  background: rgba(244, 67, 54, 0.2);
-  color: #F44336;
+  background: var(--error-light);
+  color: var(--error-color);
 }
 
 .record-status.status-stopped {
-  background: rgba(255, 152, 0, 0.2);
-  color: #FF9800;
+  background: var(--warning-light);
+  color: var(--warning-color);
 }
 
 .record-info {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--spacing-md);
   flex-wrap: wrap;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-light);
 }
 
 .record-metric {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--primary-color);
-  font-weight: 500;
-  padding: 2px 8px;
-  background: rgba(10, 13, 22, 0.1);
-  border-radius: 4px;
+  font-weight: var(--font-weight-medium);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background: var(--primary-light);
+  border-radius: var(--radius-sm);
 }
 
 .record-delete-btn {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
   background: transparent;
   border: none;
   color: var(--text-light);
   cursor: pointer;
-  padding: 4px;
+  padding: var(--spacing-xs);
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   opacity: 0;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .training-record-item:hover .record-delete-btn {
@@ -248,11 +247,11 @@
 }
 
 .record-delete-btn:hover {
-  background: rgba(244, 67, 54, 0.1);
-  color: #F44336;
+  background: var(--error-light);
+  color: var(--error-color);
 }
 
-/* 右侧面板 */
+/* Right panel */
 .training-panel-right {
   flex: 1;
   display: flex;
@@ -262,10 +261,10 @@
 }
 
 .training-status-section {
-  padding: 16px 24px;
+  padding: var(--spacing-lg) var(--spacing-xl);
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
-  /* 允许状态信息区域在小屏幕上滚动，为日志区域留出空间 */
+  /* Allow status section to scroll on small screens, leaving space for logs */
   max-height: 50vh;
   overflow-y: auto;
   overflow-x: hidden;
@@ -275,21 +274,21 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  gap: 8px;
+  margin-bottom: var(--spacing-lg);
+  gap: var(--spacing-sm);
 }
 
 .status-header > div {
   display: flex;
-  gap: 8px;
+  gap: var(--spacing-sm);
   align-items: center;
 }
 
 .status-header h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-size-lg);
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .btn-export-model {
@@ -298,16 +297,16 @@
   padding: var(--btn-padding-md);
   background: var(--primary-color);
   border: none;
-  border-radius: 4px;
-  color: white;
+  border-radius: var(--radius-sm);
+  color: var(--text-white);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -315,40 +314,40 @@
 .btn-export-model:hover {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .status-info {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 16px;
-  margin-bottom: 16px;
-  /* 在内容过多时允许滚动 */
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  /* Allow scrolling when content is too much */
   max-height: calc(50vh - 120px);
   overflow-y: auto;
-  /* 使用网格布局，多列展示 */
+  /* Use grid layout for multi-column display */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px 16px;
+  gap: var(--spacing-md) var(--spacing-lg);
 }
 
 .status-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
   min-width: 0;
 }
 
 .status-label {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-light);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .status-value {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   word-break: break-word;
   overflow-wrap: break-word;
@@ -357,113 +356,113 @@
 }
 
 .status-running {
-  color: #4CAF50;
-  font-weight: 500;
+  color: var(--success-color);
+  font-weight: var(--font-weight-medium);
 }
 
 .status-completed {
   color: var(--primary-color);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .status-failed {
-  color: #F44336;
-  font-weight: 500;
+  color: var(--error-color);
+  font-weight: var(--font-weight-medium);
 }
 
 .status-stopped {
-  color: #FF9800;
-  font-weight: 500;
+  color: var(--warning-color);
+  font-weight: var(--font-weight-medium);
 }
 
 
 .error-message {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: rgba(244, 67, 54, 0.1);
-  border: 1px solid rgba(244, 67, 54, 0.3);
-  border-radius: 4px;
-  color: #F44336;
-  font-size: 13px;
-  /* 独立显示，占满宽度 */
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--error-light);
+  border: 1px solid var(--error-color);
+  border-radius: var(--radius-sm);
+  color: var(--error-color);
+  font-size: var(--font-size-base);
+  /* Standalone display, full width */
   grid-column: 1 / -1;
   width: 100%;
   box-sizing: border-box;
 }
 
 .model-path {
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: rgba(10, 13, 22, 0.1);
-  border: 1px solid rgba(10, 13, 22, 0.3);
-  border-radius: 4px;
-  font-size: 13px;
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--primary-light);
+  border: 1px solid var(--primary-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-base);
   color: var(--text-primary);
   word-break: break-all;
-  /* 独立显示，占满宽度 */
+  /* Standalone display, full width */
   grid-column: 1 / -1;
   width: 100%;
   box-sizing: border-box;
 }
 
-/* 训练性能指标 */
+/* Training performance metrics */
 .training-metrics {
-  margin-top: 16px;
-  padding: 16px;
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-lg);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  /* 独立显示，占满宽度 */
+  border-radius: var(--radius-md);
+  /* Standalone display, full width */
   grid-column: 1 / -1;
   width: 100%;
   box-sizing: border-box;
 }
 
 .metrics-title {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  font-weight: 600;
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 
 .metric-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
+  padding: 10px var(--spacing-md);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  transition: all 0.2s;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
 }
 
 .metric-item:hover {
   border-color: var(--primary-color);
-  background: rgba(10, 13, 22, 0.05);
+  background: var(--primary-lighter);
 }
 
 .metric-label {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-light);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .metric-value {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   color: var(--primary-color);
-  font-weight: 600;
-  font-family: 'Courier New', monospace;
+  font-weight: var(--font-weight-semibold);
+  font-family: var(--font-family-mono);
 }
 
 .training-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 
 .btn-stop-training {
@@ -473,16 +472,16 @@
   padding: var(--btn-padding-lg);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -500,18 +499,18 @@
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  padding: 16px 24px;
-  /* 使用 min-height 而非固定的 min-height，让 flex 布局更灵活 */
+  padding: var(--spacing-lg) var(--spacing-xl);
+  /* Use min-height instead of fixed min-height for flexible flex layout */
   min-height: 300px;
-  /* 确保在 flex 容器中也能保持最小高度 */
+  /* Ensure minimum height is maintained in flex container */
   flex-basis: 300px;
 }
 
 .training-logs-section h3 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
+  margin: 0 0 var(--spacing-md) 0;
+  font-size: var(--font-size-lg);
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   flex-shrink: 0;
 }
 
@@ -519,24 +518,24 @@
   flex: 1;
   background: #000;
   color: #0f0;
-  font-family: 'Courier New', 'Consolas', 'Monaco', 'Menlo', monospace;
-  font-size: 12px;
-  padding: 12px;
-  border-radius: 4px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-sm);
   overflow-y: auto;
   overflow-x: auto;
   min-height: 0;
-  /* 确保日志容器有最小高度，在小屏幕上也能正常显示 */
+  /* Ensure log container has minimum height for proper display on small screens */
   min-height: 250px;
-  /* 使用视口高度来确保在小屏幕上有足够的显示空间 */
+  /* Use viewport height to ensure sufficient display space on small screens */
   max-height: calc(100vh - 400px);
 }
 
 .empty-logs {
-  padding: 20px;
+  padding: var(--spacing-xl);
   text-align: center;
-  color: #666;
-  font-size: 13px;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-base);
 }
 
 .log-line {
@@ -553,87 +552,154 @@
   margin-bottom: 0;
 }
 
-/* 配置项样式 */
-.config-section-divider {
-  margin: 24px 0 16px 0;
-  padding: 8px 0;
-  border-top: 1px solid var(--border-color);
-  color: var(--text-light);
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+/* Configuration item styles */
+/* Use unified form section divider styles from components.css */
+.config-section-divider,
+.form-section-divider {
+  grid-column: 1 / -1; /* Span full width in grid layout */
+  margin: var(--spacing-2xl) 0 var(--spacing-lg) 0;
+  padding: var(--spacing-md) 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
 }
 
-.config-section-divider:first-child {
+.config-section-divider:first-child,
+.form-section-divider:first-child {
   margin-top: 0;
-  border-top: none;
+}
+
+/* Section title */
+.config-section-divider > span,
+.form-section-divider > span {
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  padding: 0;
+  margin: 0;
 }
 
 .advanced-toggle {
-  width: 100%;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 0;
+  justify-content: center;
+  padding: var(--spacing-xs) var(--spacing-sm);
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-size-base);
   cursor: pointer;
-  transition: color 0.2s;
-  text-align: left;
+  transition: all var(--transition-base);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
 }
 
 .advanced-toggle:hover {
+  background: var(--bg-secondary);
   color: var(--primary-color);
 }
 
-.advanced-toggle span:first-child {
-  font-size: 10px;
-  width: 16px;
+.advanced-toggle:active {
+  background: var(--bg-tertiary);
+}
+
+.advanced-toggle span {
+  font-size: var(--font-size-sm);
   display: inline-block;
+  width: 16px;
+  text-align: center;
+  line-height: 1;
 }
 
+/* Use unified form styles from components.css */
+/* Map config-item to form-item styles for backward compatibility */
 .config-item {
-  margin-bottom: 20px;
-}
-
-.config-item:last-child {
-  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: 0; /* Gap handled by form-container */
 }
 
 .config-item label {
   display: block;
-  margin-bottom: 8px;
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
+  margin-bottom: 0;
 }
 
-.config-item input,
-.config-item select {
+.config-item input {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--input-padding-y) var(--input-padding-x);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--input-border-radius);
   color: var(--text-primary);
-  font-size: 13px;
-  transition: all 0.2s;
+  font-size: var(--input-font-size);
+  font-family: var(--font-family-base);
+  transition: all var(--transition-base);
+  box-sizing: border-box;
+}
+
+/* Select dropdown - optimized styling with aligned arrow */
+.config-item select {
+  width: 100%;
+  padding: var(--input-padding-y) var(--input-padding-x);
+  padding-right: calc(var(--input-padding-x) + 24px); /* Extra space for arrow */
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--input-border-radius);
+  color: var(--text-primary);
+  font-size: var(--input-font-size);
+  font-family: var(--font-family-base);
+  transition: all var(--transition-base);
+  box-sizing: border-box;
+  appearance: none; /* Remove default arrow */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4L6 8L10 4' stroke='%23666666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--input-padding-x) center;
+  background-size: 12px 12px;
+  cursor: pointer;
+}
+
+.config-item select:hover {
+  border-color: var(--border-dark);
+}
+
+.config-item select:focus {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4L6 8L10 4' stroke='%230A0D16' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 .config-item input:focus,
 .config-item select:focus {
   outline: none;
   border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-lighter);
 }
 
 .config-item input:disabled,
 .config-item select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  background: var(--bg-secondary);
+}
+
+/* Select option styling */
+.config-item select option {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--input-font-size);
+}
+
+.config-item select option:hover {
+  background: var(--bg-secondary);
+}
+
+.config-item select option:checked {
+  background: var(--primary-color);
+  color: var(--text-white);
 }
 
 .btn-start-training {
@@ -643,18 +709,18 @@
   padding: var(--btn-padding-lg);
   background: var(--primary-color);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-white);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s;
-  margin-top: 8px;
+  transition: all var(--transition-base);
+  margin-top: var(--spacing-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -662,7 +728,7 @@
 .btn-start-training:hover:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .btn-start-training:disabled {
@@ -676,32 +742,34 @@
   align-items: center;
   justify-content: center;
   color: var(--text-light);
-  font-size: 14px;
+  font-size: var(--font-size-md);
 }
 
-/* 配置弹窗样式 */
+/* Configuration modal styles */
 .config-modal-overlay {
   position: fixed;
-  top: 0;
+  top: var(--header-height); /* start below top nav */
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  height: calc(100vh - var(--header-height)); /* avoid being covered by nav */
+  background: var(--bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 999; /* 低于顶部导航栏(1000)，确保不遮挡导航栏和语言切换器 */
+  z-index: var(--z-modal); /* Set to top layer to ensure modals are above all content */
 }
 
 .config-modal {
   background: var(--bg-primary);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   width: 90%;
-  max-width: 500px;
+  max-width: 900px; /* Increased to accommodate 2-column form layout */
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden; /* Prevent content overflow */
 }
 
 .config-modal.quant-modal {
@@ -712,24 +780,26 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 20px 24px;
+  padding: var(--spacing-xl) var(--spacing-xl);
   border-bottom: 1px solid var(--border-color);
 }
 
 .config-modal-header h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .config-modal-content {
-  padding: 24px;
+  padding: var(--spacing-xl);
   overflow-y: auto;
+  overflow-x: hidden; /* Prevent horizontal scrolling */
   flex: 1;
+  min-width: 0; /* Allow flex item to shrink below content size */
 }
 
-/* 量化弹窗特殊样式 */
+/* Quantization modal special styles */
 .config-modal.quant-modal .config-modal-content {
   display: flex;
   flex-direction: column;
@@ -737,7 +807,7 @@
 }
 
 .config-modal.quant-modal .config-item {
-  margin-bottom: 20px;
+  margin-bottom: var(--spacing-xl);
 }
 
 .config-modal.quant-modal .config-item:last-of-type {
@@ -746,8 +816,8 @@
 
 .config-modal-actions {
   display: flex;
-  gap: 12px;
-  padding: 16px 24px;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-xl);
   border-top: 1px solid var(--border-color);
   justify-content: flex-end;
 }
@@ -758,16 +828,16 @@
   padding: var(--btn-padding-lg);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -782,23 +852,23 @@
   cursor: not-allowed;
 }
 
-/* 测试模型相关样式 */
+/* Test model related styles */
 .btn-test-model {
   height: var(--btn-height-md);
   min-height: var(--btn-height-md);
   padding: var(--btn-padding-md);
   background: var(--primary-color);
-  color: white;
+  color: var(--text-white);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   box-sizing: border-box;
 }
 
@@ -811,18 +881,18 @@
   min-height: var(--btn-height-md);
   padding: var(--btn-padding-md);
   background: var(--primary-color);
-  color: white;
+  color: var(--text-white);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
 }
 
 .btn-quant-model:hover {
@@ -837,7 +907,7 @@
 .test-modal-body {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: var(--spacing-xl);
   align-items: start;
 }
 
@@ -864,7 +934,7 @@
 .test-left {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--spacing-xl);
 }
 
 .test-left .config-item {
@@ -872,9 +942,9 @@
 }
 
 .test-left .config-item label {
-  margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
 }
 
 .test-right {
@@ -882,7 +952,7 @@
   flex-direction: column;
   min-height: 100%;
   align-items: stretch;
-  gap: 20px;
+  gap: var(--spacing-xl);
 }
 
 .test-upload-section {

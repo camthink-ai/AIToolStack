@@ -1,0 +1,180 @@
+/**
+ * Theme Variables - Unified Design System
+ * This file contains all design tokens for the application
+ * Use CSS variables for consistent theming across all components
+ */
+
+:root {
+  /* ========== Color Palette ========== */
+  
+  /* Primary Colors */
+  --primary-color: #0A0D16;
+  --primary-hover: #1a1d26;
+  --primary-active: #0A0D16;
+  --primary-light: rgba(10, 13, 22, 0.1);
+  --primary-lighter: rgba(10, 13, 22, 0.05);
+  
+  /* Accent Colors */
+  --accent-color: #EB814F;
+  --accent-hover: #f59a6b;
+  --accent-active: #d9733f;
+  --accent-light: rgba(235, 129, 79, 0.1);
+  --accent-lighter: rgba(235, 129, 79, 0.05);
+  
+  /* Background Colors */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --bg-tertiary: #fafafa;
+  --bg-dark: #ffffff;
+  --bg-dark-secondary: #fafafa;
+  --bg-overlay: rgba(0, 0, 0, 0.5);
+  
+  /* Text Colors */
+  --text-primary: #000000;
+  --text-secondary: #333333;
+  --text-tertiary: #666666;
+  --text-light: #999999;
+  --text-disabled: #cccccc;
+  --text-white: #ffffff;
+  --text-link: var(--primary-color);
+  --text-link-hover: var(--accent-color);
+  
+  /* Border Colors */
+  --border-color: #e8e8e8;
+  --border-dark: #d9d9d9;
+  --border-light: #f0f0f0;
+  --border-focus: var(--primary-color);
+  --border-error: var(--error-color);
+  
+  /* Status Colors */
+  --success-color: #52c41a;
+  --success-light: rgba(82, 196, 26, 0.1);
+  --warning-color: #EB814F;
+  --warning-light: rgba(235, 129, 79, 0.1);
+  --error-color: #ff4d4f;
+  --error-light: rgba(255, 77, 79, 0.1);
+  --info-color: #0A0D16;
+  --info-light: rgba(10, 13, 22, 0.1);
+  
+  /* ========== Typography ========== */
+  
+  /* Font Families */
+  --font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  --font-family-mono: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  
+  /* Font Sizes */
+  --font-size-xs: 10px;
+  --font-size-sm: 12px;
+  --font-size-base: 13px;
+  --font-size-md: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;
+  
+  /* Font Weights */
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  /* Line Heights */
+  --line-height-tight: 1.2;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+  
+  /* ========== Spacing ========== */
+  
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-2xl: 32px;
+  --spacing-3xl: 40px;
+  --spacing-4xl: 48px;
+  
+  /* ========== Border Radius ========== */
+  
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
+  
+  /* ========== Shadows ========== */
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 6px 20px rgba(0, 0, 0, 0.15);
+  --shadow-primary: 0 2px 8px rgba(10, 13, 22, 0.3);
+  --shadow-primary-hover: 0 6px 20px rgba(10, 13, 22, 0.3);
+  
+  /* ========== Transitions ========== */
+  
+  --transition-fast: 0.15s ease;
+  --transition-base: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  
+  /* ========== Z-Index ========== */
+  
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-fixed: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-popover: 600;
+  --z-tooltip: 700;
+  --z-notification: 800;
+  
+  /* ========== Button Specifications ========== */
+  
+  --btn-height-xs: 24px;
+  --btn-height-sm: 28px;
+  --btn-height-md: 32px;
+  --btn-height-lg: 36px;
+  --btn-height-xl: 40px;
+  
+  --btn-padding-xs: 4px 8px;
+  --btn-padding-sm: 6px 12px;
+  --btn-padding-md: 8px 16px;
+  --btn-padding-lg: 10px 20px;
+  --btn-padding-xl: 12px 24px;
+  
+  --btn-font-size: var(--font-size-base);
+  --btn-line-height: var(--line-height-normal);
+  --btn-border-radius: var(--radius-md);
+  
+  /* ========== Input Specifications ========== */
+  
+  --input-height-sm: 28px;
+  --input-height-md: 32px;
+  --input-height-lg: 36px;
+  
+  --input-padding-x: 12px;
+  --input-padding-y: 8px;
+  --input-border-radius: var(--radius-md);
+  --input-font-size: var(--font-size-base);
+  
+  /* ========== Layout ========== */
+  
+  --header-height: 64px;
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 64px;
+  --content-max-width: 1400px;
+  
+  /* ========== Breakpoints (for reference, use in media queries) ========== */
+  /* 
+    --breakpoint-xs: 480px;
+    --breakpoint-sm: 640px;
+    --breakpoint-md: 768px;
+    --breakpoint-lg: 1024px;
+    --breakpoint-xl: 1280px;
+    --breakpoint-2xl: 1536px;
+  */
+}
+

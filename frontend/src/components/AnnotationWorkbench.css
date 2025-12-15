@@ -1,6 +1,6 @@
 .annotation-workbench {
   width: 100%;
-  height: calc(100vh - 64px);
+  height: calc(100vh - var(--header-height));
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
@@ -15,7 +15,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
+  padding: var(--spacing-lg) var(--spacing-xl);
   background: var(--bg-primary);
   border: none;
   border-bottom: 1px solid var(--border-color);
@@ -26,7 +26,7 @@
 .header-left {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: var(--spacing-lg);
 }
 
 .btn-back {
@@ -35,15 +35,15 @@
   padding: var(--btn-padding-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
   cursor: pointer;
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -61,31 +61,31 @@
 }
 
 .header-left h2 {
-  margin: 0 12px 0 0;
-  font-size: 1.2em;
+  margin: 0 var(--spacing-md) 0 0;
+  font-size: var(--font-size-xl);
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .workbench-subtitle {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--text-light);
-  margin-left: 12px;
-  padding-left: 12px;
+  margin-left: var(--spacing-md);
+  padding-left: var(--spacing-md);
   border-left: 1px solid var(--border-color);
 }
 
 .header-right {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: var(--spacing-xl);
 }
 
 .header-info {
   display: flex;
   align-items: center;
-  gap: 15px;
-  font-size: 14px;
+  gap: var(--spacing-lg);
+  font-size: var(--font-size-md);
   color: var(--text-secondary);
 }
 
@@ -95,7 +95,7 @@
 
 .image-resolution {
   color: var(--text-light);
-  font-family: monospace;
+  font-family: var(--font-family-mono);
 }
 
 .workbench-content {
@@ -125,10 +125,10 @@
   width: 100%;
   height: 100%;
   color: var(--text-light);
-  font-size: 1.2em;
+  font-size: var(--font-size-xl);
 }
 
-/* 导出下拉菜单 */
+/* Export dropdown menu */
 .export-dropdown {
   position: relative;
 }
@@ -139,17 +139,17 @@
   padding: var(--btn-padding-sm);
   background: var(--primary-color);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-white);
   cursor: pointer;
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
-  font-weight: 500;
-  transition: all 0.2s;
+  font-weight: var(--font-weight-medium);
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -157,7 +157,7 @@
 .btn-export:hover:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .btn-export:disabled {
@@ -174,7 +174,7 @@
 .btn-export svg:last-child {
   width: 16px;
   height: 16px;
-  transition: transform 0.2s;
+  transition: transform var(--transition-base);
   flex-shrink: 0;
 }
 
@@ -184,28 +184,28 @@
 
 .dropdown-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--spacing-xs));
   right: 0;
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
   min-width: 180px;
-  z-index: 999;
+  z-index: var(--z-dropdown);
   overflow: hidden;
 }
 
 .dropdown-item {
   display: block;
   width: 100%;
-  padding: 10px 16px;
+  padding: 10px var(--spacing-lg);
   background: transparent;
   border: none;
   text-align: left;
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 14px;
-  transition: background 0.2s;
+  font-size: var(--font-size-md);
+  transition: background var(--transition-base);
 }
 
 .dropdown-item:hover:not(:disabled) {

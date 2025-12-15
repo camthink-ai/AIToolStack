@@ -3,18 +3,18 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 64px;
+  height: var(--header-height);
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
-  z-index: 1000;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  z-index: var(--z-fixed);
+  box-shadow: var(--shadow-sm);
 }
 
 .nav-container {
   height: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 var(--spacing-xl);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -23,7 +23,7 @@
 .nav-left {
   display: flex;
   align-items: center;
-  gap: 32px;
+  gap: var(--spacing-2xl);
   flex: 1;
 }
 
@@ -33,8 +33,8 @@
 }
 
 .logo-text {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
   color: var(--primary-color);
   letter-spacing: -0.5px;
 }
@@ -42,22 +42,22 @@
 .nav-menu {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--spacing-sm);
 }
 
 .nav-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-lg);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   position: relative;
 }
 
@@ -68,7 +68,7 @@
 
 .nav-menu-item.active {
   color: var(--accent-color);
-  background: rgba(235, 129, 79, 0.1);
+  background: var(--accent-light);
 }
 
 .nav-menu-item.active .nav-icon {
@@ -76,7 +76,7 @@
 }
 
 .nav-icon {
-  font-size: 18px;
+  font-size: var(--font-size-xl);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -95,7 +95,7 @@
 .nav-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--spacing-lg);
 }
 
 .nav-user {
@@ -104,11 +104,11 @@
   justify-content: center;
   width: 36px;
   height: 36px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   color: var(--text-secondary);
-  font-size: 24px;
+  font-size: var(--font-size-3xl);
 }
 
 .nav-user svg {
@@ -122,14 +122,14 @@
   color: var(--text-primary);
 }
 
-/* 响应式设计 */
+/* Responsive design */
 @media (max-width: 768px) {
   .nav-container {
-    padding: 0 16px;
+    padding: 0 var(--spacing-lg);
   }
   
   .nav-left {
-    gap: 16px;
+    gap: var(--spacing-lg);
   }
   
   .nav-label {
@@ -137,6 +137,6 @@
   }
   
   .nav-menu-item {
-    padding: 8px 12px;
+    padding: var(--spacing-sm) var(--spacing-md);
   }
 }

@@ -1,6 +1,6 @@
 .project-selector {
   width: 100%;
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - var(--header-height));
   display: flex;
   flex-direction: column;
   background: transparent;
@@ -23,13 +23,13 @@
 }
 
 .project-selector-content {
-  max-width: 1400px;
+  max-width: var(--content-max-width);
   margin: 0 auto;
   width: 100%;
   background: var(--bg-primary);
-  border-radius: 8px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  box-shadow: var(--shadow-md);
 }
 
 .project-list-section {
@@ -44,33 +44,33 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 30px;
+  margin-bottom: var(--spacing-2xl);
 }
 
 .section-header h2 {
   color: var(--primary-color);
   margin: 0;
-  font-size: 1.5em;
+  font-size: var(--font-size-3xl);
 }
 
 .header-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 
 .btn-primary,
 .btn-secondary,
 .btn-create {
-  padding: 10px 20px;
+  padding: var(--btn-padding-lg);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-medium);
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
 }
 
 .btn-secondary svg,
@@ -89,7 +89,7 @@
 .btn-primary:hover:not(:disabled) {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .btn-primary:disabled {
@@ -126,7 +126,7 @@
 .btn-create:hover {
   background: var(--primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 13, 22, 0.3);
+  box-shadow: var(--shadow-primary);
 }
 
 .btn-delete {
@@ -134,10 +134,10 @@
   border: none;
   color: var(--text-light);
   cursor: pointer;
-  font-size: 25px;
+  font-size: var(--font-size-3xl);
   padding: 0;
-  border-radius: 4px;
-  transition: all 0.2s;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -155,7 +155,7 @@
 }
 
 .btn-delete:hover {
-  background: rgba(255, 77, 77, 0.1);
+  background: var(--error-light);
   color: var(--error-color);
   transform: scale(1.1);
 }
@@ -167,16 +167,16 @@
   background: var(--error-color);
   color: var(--text-white);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--btn-font-size);
   line-height: var(--btn-line-height);
-  font-weight: 500;
-  transition: all 0.2s;
+  font-weight: var(--font-weight-medium);
+  transition: all var(--transition-base);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--spacing-sm);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -195,25 +195,25 @@
 .project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+  gap: var(--spacing-xl);
 }
 
 .project-card {
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 24px;
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-base);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--spacing-md);
 }
 
 .project-card:hover {
   border-color: var(--primary-color);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(10, 13, 22, 0.15);
+  box-shadow: var(--shadow-lg);
 }
 
 .project-card-header {
