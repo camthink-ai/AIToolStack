@@ -81,7 +81,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onStartProject }) => {
           </div>
           <div className="workflow-header-buttons">
             {onStartProject && (
-              <a
+              <button
+                type="button"
                 className="dashboard-device-btn"
                 onClick={onStartProject}
                 style={{
@@ -91,7 +92,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onStartProject }) => {
                 }}
               >
                 {t('dashboard.startProject', '开始创建项目')}
-              </a>
+              </button>
             )}
             <a 
               href="https://www.camthink.ai/product/neoeyes-301/" 

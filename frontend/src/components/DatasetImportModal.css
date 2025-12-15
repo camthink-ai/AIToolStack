@@ -1,12 +1,11 @@
 .dataset-import-modal {
-  max-width: 520px;
+  max-width: 560px;
 }
 
 .dataset-import-body {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg);
-  padding: var(--spacing-xl) var(--spacing-2xl) var(--spacing-lg);
 }
 
 .dataset-import-label {
@@ -70,7 +69,7 @@
 .dataset-import-upload-area {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: var(--spacing-md);
 }
 
 .dataset-import-file-input {

@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { API_BASE_URL } from '../config';
 import { IoRefresh, IoAdd, IoFolder, IoTrash, IoClose, IoWarning } from 'react-icons/io5';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { zodResolver } from '@hookform/resolvers/zod';
 import './ProjectSelector.css';
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter, DialogClose } from '../ui/Dialog';
+import { Button } from '../ui/Button';
+import { FormField } from '../ui/FormField';
+import { Input } from '../ui/Input';
+import { Textarea } from '../ui/Textarea';
 
 // Icon component wrapper to resolve TypeScript type issues
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -32,22 +40,40 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [projectName, setProjectName] = useState('');
-  const [projectDesc, setProjectDesc] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ project: Project | null; show: boolean }>({
     project: null,
     show: false
   });
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleCreateProject = async () => {
-    if (!projectName.trim()) {
-      alert(t('project.nameRequired'));
-      return;
-    }
+  type CreateProjectForm = {
+    name: string;
+    description?: string;
+  };
 
-    setIsCreating(true);
+  const createProjectSchema = useMemo(
+    () =>
+      z.object({
+        name: z.string().trim().min(1, { message: t('project.nameRequired') }),
+        description: z.string().trim().optional()
+      }),
+    [t]
+  );
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting }
+  } = useForm<CreateProjectForm>({
+    resolver: zodResolver(createProjectSchema),
+    defaultValues: {
+      name: '',
+      description: ''
+    }
+  });
+
+  const handleCreateProject = async (values: CreateProjectForm) => {
     try {
       const response = await fetch(`${API_BASE_URL}/projects`, {
         method: 'POST',
@@ -55,16 +81,15 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: projectName.trim(),
-          description: projectDesc.trim(),
+          name: values.name.trim(),
+          description: (values.description || '').trim(),
         }),
       });
 
       if (response.ok) {
         await response.json();
-        setProjectName('');
-        setProjectDesc('');
         setShowCreateModal(false);
+        reset();
         onRefresh();
         // Optional: automatically open newly created project
         // onSelect(newProject);
@@ -75,15 +100,12 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
     } catch (error) {
       console.error('Failed to create project:', error);
       alert(`${t('project.createFailed')}: ${t('common.connectionError', 'Unable to connect to server')}`);
-    } finally {
-      setIsCreating(false);
     }
   };
 
   const handleCancelCreate = () => {
-    setProjectName('');
-    setProjectDesc('');
     setShowCreateModal(false);
+    reset();
   };
 
   const handleDeleteProject = (e: React.MouseEvent, project: Project) => {
@@ -143,30 +165,24 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           <div className="section-header">
             <h2>{t('project.title')}</h2>
             <div className="header-actions">
-              <button onClick={onRefresh} className="btn-secondary">
+              <Button variant="secondary" size="md" onClick={onRefresh}>
                 <Icon component={IoRefresh} /> {t('common.refresh')}
-              </button>
-              <button 
-                onClick={() => setShowCreateModal(true)} 
-                className="btn-create"
-              >
+              </Button>
+              <Button variant="primary" size="md" onClick={() => setShowCreateModal(true)}>
                 <Icon component={IoAdd} /> {t('project.createNew')}
-              </button>
+              </Button>
             </div>
           </div>
         </div>
-            {projects.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon"><Icon component={IoFolder} /></div>
+        {projects.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon"><Icon component={IoFolder} /></div>
             <p>{t('project.noProjects')}</p>
-                <button 
-                  onClick={() => setShowCreateModal(true)} 
-                  className="btn-primary"
-                >
+            <Button onClick={() => setShowCreateModal(true)}>
               {t('project.create')}
-                </button>
-              </div>
-            ) : (
+            </Button>
+          </div>
+        ) : (
           <div className="project-list-section">
             <div className="project-grid">
               {projects.map((project) => (
@@ -178,13 +194,16 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                   <div className="project-card-header">
                     <h3>{project.name}</h3>
                     <div className="project-header-actions">
-                      <button
-                        className="btn-delete"
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="project-delete-btn"
                         onClick={(e) => handleDeleteProject(e, project)}
                         title={t('project.delete')}
                       >
                         <Icon component={IoTrash} />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                   <p className="project-description">{project.description || t('common.noDescription', '无描述')}</p>
@@ -203,71 +222,79 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         )}
       </div>
 
-      {/* 创建项目弹窗 */}
-      {showCreateModal && (
-        <div className="modal-overlay" onClick={handleCancelCreate}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{t('project.createNew')}</h2>
-              <button className="modal-close" onClick={handleCancelCreate}><Icon component={IoClose} /></button>
-            </div>
-            <div className="modal-body">
-              <div className="form-group">
-                <label>{t('project.name')} <span className="required">*</span></label>
-                <input
+      {/* 创建项目弹窗（Radix Dialog + React Hook Form） */}
+      <Dialog
+        open={showCreateModal}
+        onOpenChange={(open) => {
+          setShowCreateModal(open);
+          if (!open) reset();
+        }}
+      >
+        <DialogContent className="config-modal create-project-modal">
+          <DialogHeader className="config-modal-header">
+            <DialogTitle asChild>
+              <h3>{t('project.createNew')}</h3>
+            </DialogTitle>
+            <DialogClose className="close-btn" onClick={handleCancelCreate}>
+              <Icon component={IoClose} />
+            </DialogClose>
+          </DialogHeader>
+          <form onSubmit={handleSubmit(handleCreateProject)}>
+            <DialogBody className="config-modal-content ui-form-stack">
+              <FormField
+                label={t('project.name')}
+                required
+                error={errors.name?.message}
+              >
+                <Input
                   type="text"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
+                  {...register('name')}
                   placeholder={t('project.name')}
-                  disabled={isCreating}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && projectName.trim() && !isCreating) {
-                      handleCreateProject();
-                    }
-                  }}
+                  disabled={isSubmitting}
                   autoFocus
                 />
-              </div>
-              <div className="form-group">
-                <label>{t('project.description')}</label>
-                <textarea
-                  value={projectDesc}
-                  onChange={(e) => setProjectDesc(e.target.value)}
+              </FormField>
+              <FormField
+                label={t('project.description')}
+                error={errors.description?.message}
+              >
+                <Textarea
+                  {...register('description')}
                   placeholder={t('project.descriptionOptional', '输入项目描述（可选）')}
-                  disabled={isCreating}
+                  disabled={isSubmitting}
                   rows={4}
                 />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button
-                onClick={handleCreateProject}
-                disabled={isCreating || !projectName.trim()}
-                className="btn-primary"
-              >
-                {isCreating ? t('common.loading') : t('project.create')}
-              </button>
-              <button
-                onClick={handleCancelCreate}
-                disabled={isCreating}
-                className="btn-secondary"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </FormField>
+            </DialogBody>
+            <DialogFooter className="config-modal-actions">
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? t('common.loading') : t('project.create')}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-      {/* 删除确认弹窗 */}
-      {deleteConfirm.show && deleteConfirm.project && (
-        <div className="modal-overlay" onClick={cancelDelete}>
-          <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{t('project.delete')}</h2>
-              <button className="modal-close" onClick={cancelDelete} disabled={isDeleting}><Icon component={IoClose} /></button>
-            </div>
-            <div className="modal-body">
+      {/* 删除确认弹窗（Radix Dialog） */}
+      <Dialog
+        open={deleteConfirm.show && !!deleteConfirm.project}
+        onOpenChange={(open) => {
+          if (!open) {
+            cancelDelete();
+          }
+        }}
+      >
+        <DialogContent className="config-modal delete-modal">
+          <DialogHeader className="config-modal-header">
+            <DialogTitle asChild>
+              <h3>{t('project.delete')}</h3>
+            </DialogTitle>
+            <DialogClose className="close-btn" onClick={cancelDelete} disabled={isDeleting}>
+              <Icon component={IoClose} />
+            </DialogClose>
+          </DialogHeader>
+          <DialogBody className="config-modal-content">
+            {deleteConfirm.project && (
               <div className="delete-warning">
                 <div className="warning-icon"><Icon component={IoWarning} /></div>
                 <p>
@@ -277,26 +304,28 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
                   {t('project.deleteWarning', '此操作不可恢复，将删除项目中的所有图像、标注和配置。')}
                 </p>
               </div>
-            </div>
-            <div className="modal-footer">
-              <button
-                onClick={confirmDelete}
-                disabled={isDeleting}
-                className="btn-danger"
-              >
-                {isDeleting ? t('common.loading') : t('common.confirm')}
-              </button>
-              <button
-                onClick={cancelDelete}
-                disabled={isDeleting}
-                className="btn-secondary"
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            )}
+          </DialogBody>
+          <DialogFooter className="config-modal-actions">
+            <Button
+              type="button"
+              onClick={confirmDelete}
+              disabled={isDeleting}
+              className="btn-danger"
+            >
+              {isDeleting ? t('common.loading') : t('common.confirm')}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={cancelDelete}
+              disabled={isDeleting}
+            >
+              {t('common.cancel')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import { IoHome, IoPricetag, IoPersonCircle } from 'react-icons/io5';
+import { IoHome, IoPricetag } from 'react-icons/io5';
 import './TopNavigation.css';
 
 // Icon component wrapper

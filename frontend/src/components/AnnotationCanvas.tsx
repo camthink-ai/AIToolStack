@@ -1204,7 +1204,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [tool, polygonPoints, isDrawingPolygon, keypoints, isDrawingKeypoints, finishPolygon, finishKeypoints]);
+  }, [tool, polygonPoints, isDrawingPolygon, keypoints, isDrawingKeypoints, finishPolygon, finishKeypoints, onAnnotationSelect]);
 
   // Reset drawing state when switching tools
   useEffect(() => {

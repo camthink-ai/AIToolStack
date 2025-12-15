@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IoLanguage, IoChevronDown } from 'react-icons/io5';
 import './LanguageSwitcher.css';
+import { Button } from '../ui/Button';
 
 export const LanguageSwitcher: React.FC = () => {
   const { i18n } = useTranslation();
@@ -41,24 +42,30 @@ export const LanguageSwitcher: React.FC = () => {
   return (
     <div className="language-switcher" ref={dropdownRef}>
       <div className="language-dropdown">
-        <button
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
           className="language-btn"
           onClick={() => setIsOpen(!isOpen)}
         >
-          <IoLanguage className="language-icon" />
+          <IoLanguage />
           <span className="language-label">{currentLabel}</span>
           <IoChevronDown className={`language-chevron ${isOpen ? 'open' : ''}`} />
-        </button>
+        </Button>
         {isOpen && (
           <div className="language-dropdown-menu">
             {languages.map((lang) => (
-              <button
+              <Button
                 key={lang.value}
+                type="button"
+                variant="ghost"
+                size="sm"
                 className={`language-dropdown-item ${currentLanguage === lang.value ? 'active' : ''}`}
                 onClick={() => handleLanguageChange(lang.value)}
               >
                 {lang.label}
-              </button>
+              </Button>
             ))}
           </div>
         )}

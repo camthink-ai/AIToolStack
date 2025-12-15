@@ -34,7 +34,7 @@ export const ToolsBar: React.FC<ToolsBarProps> = ({ currentTool, onToolChange })
         >
           <span className="tool-icon">{tool.icon}</span>
           <span className="tool-label">{tool.label}</span>
-          <span className="tool-shortcut">{tool.shortcut}</span>
+          {/* <span className="tool-shortcut">{tool.shortcut}</span> */}
         </button>
       ))}
     </div>

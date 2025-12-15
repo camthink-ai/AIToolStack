@@ -725,15 +725,8 @@
   box-sizing: border-box;
 }
 
-.btn-start-training:hover:not(:disabled) {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-primary);
-}
-
-.btn-start-training:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.btn-start-training {
+  /* Layout-only tweaks for primary action button in modals */
 }
 
 .no-training-selected {
@@ -823,80 +816,13 @@
 }
 
 .btn-cancel {
-  height: var(--btn-height-lg);
-  min-height: var(--btn-height-lg);
-  padding: var(--btn-padding-lg);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  cursor: pointer;
-  transition: all var(--transition-base);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  white-space: nowrap;
-  box-sizing: border-box;
-}
-
-.btn-cancel:hover:not(:disabled) {
-  background: var(--bg-secondary);
-  border-color: var(--primary-color);
-}
-
-.btn-cancel:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  /* Kept for legacy markup; visual styles now come from Button variants */
 }
 
 /* Test model related styles */
-.btn-test-model {
-  height: var(--btn-height-md);
-  min-height: var(--btn-height-md);
-  padding: var(--btn-padding-md);
-  background: var(--primary-color);
-  color: var(--text-white);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  white-space: nowrap;
-  transition: all var(--transition-base);
-  box-sizing: border-box;
-}
-
-.btn-test-model:hover {
-  background: var(--primary-hover);
-}
-
+.btn-test-model,
 .btn-quant-model {
-  height: var(--btn-height-md);
-  min-height: var(--btn-height-md);
-  padding: var(--btn-padding-md);
-  background: var(--primary-color);
-  color: var(--text-white);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  white-space: nowrap;
-  box-sizing: border-box;
-  transition: all var(--transition-base);
-}
-
-.btn-quant-model:hover {
-  background: var(--primary-hover);
+  /* Legacy class hooks; spacing handled by container, visuals by Button */
 }
 
 .test-modal {
@@ -1289,39 +1215,8 @@
 }
 
 .btn-download-file {
-  height: var(--btn-height-md);
-  min-height: var(--btn-height-md);
-  padding: var(--btn-padding-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: nowrap;
-  box-sizing: border-box;
-  background: var(--primary-color);
-  border: none;
-  border-radius: 4px;
-  color: white;
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
+  /* Layout helper for download buttons; visuals from Button variants */
   flex-shrink: 0;
-}
-
-.btn-download-file:hover {
-  background: var(--primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(10, 13, 22, 0.3);
-}
-
-.btn-download-file.model-package {
-  background: #4CAF50;
-}
-
-.btn-download-file.model-package:hover {
-  background: #45a049;
 }
 
 .checkbox-row {

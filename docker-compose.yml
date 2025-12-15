@@ -1,9 +1,10 @@
 services:
-  aitoolstack:
+  camthink:
+    image: camthink/aitoolstack:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: aitoolstack
+    container_name: camthink-aitoolstack
     ports:
       # Format: host_ip:host_port:container_port
       # Use 0.0.0.0 to bind all network interfaces, allowing external access
@@ -41,7 +42,7 @@ services:
       # NE301_PROJECT_PATH: Use workspace mount path (host directory mapping, auto-initialized on container startup)
       - NE301_PROJECT_PATH=/workspace/ne301
       # CONTAINER_NAME: Docker-in-Docker requires container name to dynamically get host path (auto-detected, paths differ on different machines)
-      - CONTAINER_NAME=aitoolstack
+      - CONTAINER_NAME=camthink-aitoolstack
       # NE301_HOST_PATH: Optional, only used when auto-detection fails (not recommended to set manually)
       # Auto-detection will try: 1) docker inspect to find /workspace/ne301 mount point, 2) infer project root from datasets mount point
       # Normally this variable doesn't need to be set, system will auto-detect

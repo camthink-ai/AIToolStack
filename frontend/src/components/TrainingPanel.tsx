@@ -3,6 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { API_BASE_URL } from '../config';
 import './TrainingPanel.css';
 import { IoClose, IoDownload, IoTrash, IoAdd, IoImage } from 'react-icons/io5';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter, DialogClose } from '../ui/Dialog';
+import { Button } from '../ui/Button';
+import { FormField } from '../ui/FormField';
+import { Input } from '../ui/Input';
+import { Select, SelectItem } from '../ui/Select';
 
 interface TrainingPanelProps {
   projectId: string;
@@ -97,6 +102,8 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   const [quantProgress, setQuantProgress] = useState<string>('');
   const [quantStartTime, setQuantStartTime] = useState<number | null>(null);
   const [quantElapsedTime, setQuantElapsedTime] = useState<number>(0);
+  const [quantImgSzInput, setQuantImgSzInput] = useState('256');
+  const [quantFractionInput, setQuantFractionInput] = useState('0.2');
   const quantTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const quantTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [trainingConfig, setTrainingConfig] = useState<TrainingRequest>({
@@ -132,6 +139,22 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   const [epochsInput, setEpochsInput] = useState('');
   const [imgszInput, setImgszInput] = useState('');
   const [batchInput, setBatchInput] = useState('');
+
+  // Sync numeric text inputs when配置弹窗打开
+  useEffect(() => {
+    if (showConfigModal) {
+      setEpochsInput(trainingConfig.epochs.toString());
+      setImgszInput(trainingConfig.imgsz.toString());
+      setBatchInput(trainingConfig.batch.toString());
+    }
+  }, [showConfigModal, trainingConfig.epochs, trainingConfig.imgsz, trainingConfig.batch]);
+
+  useEffect(() => {
+    if (showQuantModal) {
+      setQuantImgSzInput(quantImgSz.toString());
+      setQuantFractionInput(quantFraction.toString());
+    }
+  }, [showQuantModal, quantImgSz, quantFraction]);
 
   const logsEndRef = useRef<HTMLDivElement>(null);
   const recordsIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -617,9 +640,15 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
       <div className="training-panel-fullscreen">
         <div className="training-panel-header">
           <h2>{t('training.title')}</h2>
-          <button className="close-btn" onClick={onClose}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="close-btn"
+            onClick={onClose}
+          >
             <IoClose />
-          </button>
+          </Button>
         </div>
 
         <div className="training-panel-body">
@@ -628,13 +657,16 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
             {/* 训练记录列表 */}
             <div className="training-records-section">
               <div className="records-header">
-                <button 
+                <Button 
+                  type="button"
+                  variant="primary"
+                  size="sm"
                   className="btn-new-training"
                   onClick={() => setShowConfigModal(true)}
                   disabled={isLoading}
                 >
                   <IoAdd /> {t('training.newTraining')}
-                </button>
+                </Button>
               </div>
               <div className="training-records-list">
                 {trainingRecords.length === 0 ? (
@@ -666,7 +698,10 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         )}
                       </div>
                       {selectedTrainingId === record.training_id && (
-                        <button
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
                           className="record-delete-btn"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -674,7 +709,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                           }}
                         >
                           <IoTrash />
-                        </button>
+                        </Button>
                       )}
                     </div>
                   ))
@@ -694,15 +729,33 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     <h3>{t('training.trainingInfo')}</h3>
                     {isCompleted && currentStatus.model_path && (
                       <div>
-                        <button className="btn-export-model" onClick={handleExportModel}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="btn-export-model"
+                          onClick={handleExportModel}
+                        >
                           <IoDownload /> {t('training.exportModel')}
-                        </button>
-                        <button className="btn-export-model" onClick={handleTestModel}>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="btn-export-model"
+                          onClick={handleTestModel}
+                        >
                           <IoImage /> {t('training.testModel')}
-                        </button>
-                      <button className="btn-export-model" onClick={handleQuantModel}>
-                        <IoDownload /> {t('training.quantizeModel')}
-                      </button>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="btn-export-model"
+                          onClick={handleQuantModel}
+                        >
+                          <IoDownload /> {t('training.quantizeModel')}
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -825,9 +878,15 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                   <div className="training-actions">
                     {isTraining && (
-                      <button className="btn-stop-training" onClick={handleStopTraining}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="btn-stop-training"
+                        onClick={handleStopTraining}
+                      >
                         {t('training.stopTraining')}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -855,67 +914,56 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
           </div>
         </div>
 
-        {/* 训练配置弹窗 */}
-        {showConfigModal && (
-          <div className="config-modal-overlay" onClick={() => !isLoading && setShowConfigModal(false)}>
-            <div className="config-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="config-modal-header">
+        {/* 训练配置弹窗（Dialog + 统一表单） */}
+        <Dialog open={showConfigModal} onOpenChange={(open) => !isLoading && setShowConfigModal(open)}>
+          <DialogContent className="config-modal">
+            <DialogHeader className="config-modal-header">
+              <DialogTitle asChild>
                 <h3>{t('training.newTrainingTask')}</h3>
-                <button 
-                  className="close-btn" 
-                  onClick={() => setShowConfigModal(false)}
-                  disabled={isLoading}
-                >
-                  <IoClose />
-                </button>
-              </div>
-              
-              <div className="config-modal-content">
-                <div className="form-container grid-layout">
+              </DialogTitle>
+              <DialogClose className="close-btn" onClick={() => setShowConfigModal(false)} disabled={isLoading}>
+                <IoClose />
+              </DialogClose>
+            </DialogHeader>
+            
+            <DialogBody className="config-modal-content">
+              <div className="form-container grid-layout">
                 <div className="form-item config-item">
                   <label className="required">{t('training.modelType')}</label>
-                  <select
+                  <Select
                     value={trainingConfig.model_type}
-                    onChange={(e) => setTrainingConfig({ ...trainingConfig, model_type: e.target.value })}
+                    onValueChange={(v) => setTrainingConfig({ ...trainingConfig, model_type: v })}
                     disabled={isLoading}
                   >
-                    <option value="yolov8">{t('training.modelTypeOptions.yolov8')}</option>
-                    {/* <option value="yolov11">{t('training.modelTypeOptions.yolov11')}</option>
-                    <option value="yolov12">{t('training.modelTypeOptions.yolov12')}</option> */}
-                  </select>
+                    <SelectItem value="yolov8">{t('training.modelTypeOptions.yolov8')}</SelectItem>
+                  </Select>
                 </div>
 
                 <div className="form-item config-item">
                   <label className="required">{t('training.modelSize')}</label>
-                  <select
+                  <Select
                     value={trainingConfig.model_size}
-                    onChange={(e) => setTrainingConfig({ ...trainingConfig, model_size: e.target.value })}
+                    onValueChange={(v) => setTrainingConfig({ ...trainingConfig, model_size: v })}
                     disabled={isLoading}
                   >
-                    <option value="n">{t('training.modelSizeOptions.n')}</option>
-                    <option value="s">{t('training.modelSizeOptions.s')}</option>
-                    <option value="m">{t('training.modelSizeOptions.m')}</option>
-                    <option value="l">{t('training.modelSizeOptions.l')}</option>
-                    <option value="x">{t('training.modelSizeOptions.x')}</option>
-                  </select>
+                    <SelectItem value="n">{t('training.modelSizeOptions.n')}</SelectItem>
+                    <SelectItem value="s">{t('training.modelSizeOptions.s')}</SelectItem>
+                    <SelectItem value="m">{t('training.modelSizeOptions.m')}</SelectItem>
+                    <SelectItem value="l">{t('training.modelSizeOptions.l')}</SelectItem>
+                    <SelectItem value="x">{t('training.modelSizeOptions.x')}</SelectItem>
+                  </Select>
                 </div>
 
                 <div className="form-item config-item">
                   <label className="required">{t('training.epochsLabel')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min="1"
-                    max="1000"
-                    value={epochsInput === '' ? trainingConfig.epochs : epochsInput}
+                    min={1}
+                    max={1000}
+                    value={epochsInput}
                     onChange={(e) => {
                       const value = e.target.value;
                       setEpochsInput(value);
-                      if (value !== '' && value !== '-') {
-                        const numValue = parseInt(value, 10);
-                        if (!isNaN(numValue) && numValue >= 1 && numValue <= 1000) {
-                          setTrainingConfig({ ...trainingConfig, epochs: numValue });
-                        }
-                      }
                     }}
                     onBlur={(e) => {
                       const value = e.target.value;
@@ -927,10 +975,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         setTrainingConfig({ ...trainingConfig, epochs: 1000 });
                         setEpochsInput('');
                       } else {
-                        setEpochsInput('');
+                        setTrainingConfig({ ...trainingConfig, epochs: numValue });
+                        setEpochsInput(numValue.toString());
                       }
                     }}
-                    onFocus={(e) => {
+                    onFocus={() => {
                       setEpochsInput(trainingConfig.epochs.toString());
                     }}
                     disabled={isLoading}
@@ -939,21 +988,15 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="required">{t('training.imageSizeLabel')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min="320"
-                    max="1280"
-                    step="32"
-                    value={imgszInput === '' ? trainingConfig.imgsz : imgszInput}
+                    min={320}
+                    max={1280}
+                    step={32}
+                    value={imgszInput}
                     onChange={(e) => {
                       const value = e.target.value;
                       setImgszInput(value);
-                      if (value !== '' && value !== '-') {
-                        const numValue = parseInt(value, 10);
-                        if (!isNaN(numValue) && numValue >= 320 && numValue <= 1280) {
-                          setTrainingConfig({ ...trainingConfig, imgsz: numValue });
-                        }
-                      }
                     }}
                     onBlur={(e) => {
                       const value = e.target.value;
@@ -965,10 +1008,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         setTrainingConfig({ ...trainingConfig, imgsz: 1280 });
                         setImgszInput('');
                       } else {
-                        setImgszInput('');
+                        setTrainingConfig({ ...trainingConfig, imgsz: numValue });
+                        setImgszInput(numValue.toString());
                       }
                     }}
-                    onFocus={(e) => {
+                    onFocus={() => {
                       setImgszInput(trainingConfig.imgsz.toString());
                     }}
                     disabled={isLoading}
@@ -977,20 +1021,14 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="required">{t('training.batchSizeLabel')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min="1"
-                    max="64"
-                    value={batchInput === '' ? trainingConfig.batch : batchInput}
+                    min={1}
+                    max={64}
+                    value={batchInput}
                     onChange={(e) => {
                       const value = e.target.value;
                       setBatchInput(value);
-                      if (value !== '' && value !== '-') {
-                        const numValue = parseInt(value, 10);
-                        if (!isNaN(numValue) && numValue >= 1 && numValue <= 64) {
-                          setTrainingConfig({ ...trainingConfig, batch: numValue });
-                        }
-                      }
                     }}
                     onBlur={(e) => {
                       const value = e.target.value;
@@ -1002,7 +1040,8 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         setTrainingConfig({ ...trainingConfig, batch: 64 });
                         setBatchInput('');
                       } else {
-                        setBatchInput('');
+                        setTrainingConfig({ ...trainingConfig, batch: numValue });
+                        setBatchInput(numValue.toString());
                       }
                     }}
                     onFocus={(e) => {
@@ -1030,11 +1069,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.learningRate.lr0')}</label>
-                  <input
+                  <Input
                     type="number"
-                    step="0.0001"
-                    min="0.0001"
-                    max="1"
+                    step={0.0001}
+                    min={0.0001}
+                    max={1}
                     placeholder={t('training.learningRate.placeholder')}
                     value={trainingConfig.lr0 ?? ''}
                     onChange={(e) => {
@@ -1054,11 +1093,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.learningRate.lrf')}</label>
-                  <input
+                  <Input
                     type="number"
-                    step="0.0001"
-                    min="0.0001"
-                    max="1"
+                    step={0.0001}
+                    min={0.0001}
+                    max={1}
                     placeholder={t('training.learningRate.placeholder')}
                     value={trainingConfig.lrf ?? ''}
                     onChange={(e) => {
@@ -1083,26 +1122,26 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.optimizer.label')}</label>
-                  <select
-                    value={trainingConfig.optimizer || ''}
-                    onChange={(e) => setTrainingConfig({ ...trainingConfig, optimizer: e.target.value || undefined })}
+                  <Select
+                    value={trainingConfig.optimizer || 'default'}
+                    onValueChange={(v) => setTrainingConfig({ ...trainingConfig, optimizer: v === 'default' ? undefined : v })}
                     disabled={isLoading}
                   >
-                    <option value="">{t('training.optimizer.default')}</option>
-                    <option value="SGD">SGD</option>
-                    <option value="Adam">Adam</option>
-                    <option value="AdamW">AdamW</option>
-                    <option value="RMSProp">RMSProp</option>
-                  </select>
+                    <SelectItem value="default">{t('training.optimizer.default')}</SelectItem>
+                    <SelectItem value="SGD">SGD</SelectItem>
+                    <SelectItem value="Adam">Adam</SelectItem>
+                    <SelectItem value="AdamW">AdamW</SelectItem>
+                    <SelectItem value="RMSProp">RMSProp</SelectItem>
+                  </Select>
                 </div>
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.optimizer.momentum')}</label>
-                  <input
+                  <Input
                     type="number"
-                    step="0.01"
-                    min="0"
-                    max="1"
+                    step={0.01}
+                    min={0}
+                    max={1}
                     placeholder={t('training.learningRate.placeholder')}
                     value={trainingConfig.momentum ?? ''}
                     onChange={(e) => {
@@ -1122,11 +1161,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.optimizer.weightDecay')}</label>
-                  <input
+                  <Input
                     type="number"
-                    step="0.0001"
-                    min="0"
-                    max="0.01"
+                    step={0.0001}
+                    min={0}
+                    max={0.01}
                     placeholder={t('training.learningRate.placeholder')}
                     value={trainingConfig.weight_decay ?? ''}
                     onChange={(e) => {
@@ -1144,10 +1183,10 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.control.patience')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min="0"
-                    max="1000"
+                    min={0}
+                    max={1000}
                     placeholder={t('training.control.patiencePlaceholder')}
                     value={trainingConfig.patience ?? ''}
                     onChange={(e) => {
@@ -1167,10 +1206,10 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.control.workers')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min="0"
-                    max="16"
+                    min={0}
+                    max={16}
                     placeholder={t('training.learningRate.placeholder')}
                     value={trainingConfig.workers ?? ''}
                     onChange={(e) => {
@@ -1214,10 +1253,10 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                 <div className="form-item config-item">
                   <label className="optional" data-optional-text={t('training.optional')}>{t('training.control.savePeriod')}</label>
-                  <input
+                  <Input
                     type="number"
-                    min="-1"
-                    max="100"
+                    min={-1}
+                    max={100}
                     placeholder={t('training.control.savePeriodPlaceholder')}
                     value={trainingConfig.save_period ?? ''}
                     onChange={(e) => {
@@ -1240,7 +1279,6 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                   <span>{t('training.advanced.title')}</span>
                 </div>
 
-                <>
                     <div className="form-item config-item">
                       <label className="optional" data-optional-text={t('training.optional')}>{t('training.advanced.hsvH')}</label>
                       <input
@@ -1521,48 +1559,36 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         disabled={isLoading}
                       />
                     </div>
-                </>
-                </div>
               </div>
+            </DialogBody>
 
-              <div className="config-modal-actions">
-                {/* <button
-                  className="btn-cancel"
-                  onClick={() => setShowConfigModal(false)}
-                  disabled={isLoading}
-                >
-                  取消
-                </button> */}
-                <button
-                  className="btn-start-training"
-                  onClick={handleStartTraining}
-                  disabled={isLoading}
-                >
-                  {isLoading ? t('common.loading') : t('training.startTraining')}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+            <DialogFooter className="config-modal-actions">
+              <Button
+                className="btn-start-training"
+                onClick={handleStartTraining}
+                disabled={isLoading}
+              >
+                {isLoading ? t('common.loading') : t('training.startTraining')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* 模型测试弹窗 */}
-        {showTestModal && (
-          <div className="config-modal-overlay" onClick={() => !isTesting && setShowTestModal(false)}>
-            <div className="config-modal test-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="config-modal-header">
+        <Dialog open={showTestModal} onOpenChange={(open) => !isTesting && setShowTestModal(open)}>
+          <DialogContent className="config-modal test-modal">
+            <DialogHeader className="config-modal-header">
+              <DialogTitle asChild>
                 <h3>{t('training.test.title')}</h3>
-                <button 
-                  className="close-btn" 
-                  onClick={() => setShowTestModal(false)}
-                  disabled={isTesting}
-                >
-                  <IoClose />
-                </button>
-              </div>
-              
-              <div className="config-modal-content">
-                <div className="test-modal-body">
-                  <div className="test-left">
+              </DialogTitle>
+              <DialogClose className="close-btn" onClick={() => setShowTestModal(false)} disabled={isTesting}>
+                <IoClose />
+              </DialogClose>
+            </DialogHeader>
+            
+            <DialogBody className="config-modal-content">
+              <div className="test-modal-body">
+                <div className="test-left">
                     <div className="test-upload-section">
                       <label className="test-upload-label">
                         <input
@@ -1587,11 +1613,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                     <div className="config-item">
                       <label>{t('training.test.confThreshold')}</label>
-                      <input
+                      <Input
                         type="number"
-                        step="0.01"
-                        min="0"
-                        max="1"
+                        step={0.01}
+                        min={0}
+                        max={1}
                         value={testConf}
                         onChange={(e) => {
                           const v = parseFloat(e.target.value);
@@ -1603,11 +1629,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
                     <div className="config-item">
                       <label>{t('training.test.iouThreshold', 'IoU 阈值 (iou)')}</label>
-                      <input
+                      <Input
                         type="number"
-                        step="0.01"
-                        min="0"
-                        max="1"
+                        step={0.01}
+                        min={0}
+                        max={1}
                         value={testIou}
                         onChange={(e) => {
                           const v = parseFloat(e.target.value);
@@ -1618,73 +1644,76 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     </div>
                   </div>
 
-                  <div className="test-right">
-                    {testResults ? (
-                      <>
-                        {testResults.annotated_image && (
-                          <div className="test-result-image">
-                            <img src={testResults.annotated_image} alt={t('training.test.detectionResult')} />
-                          </div>
-                        )}
-                          <div className="test-detections-list">
-                            <div className="config-item">
-                            <label>{t('training.test.details')}</label>
-                            {testResults.detections && testResults.detections.length > 0 ? (
-                              <div className="detection-list-container">
-                                {testResults.detections.map((det: any, index: number) => (
-                                  <div key={index} className="detection-item">
-                                    <span className="detection-class">{det.class_name}</span>
-                                    <span className="detection-confidence">{t('training.test.confidence')}: {(det.confidence * 100).toFixed(2)}%</span>
-                                    <span className="detection-bbox">
-                                      [{det.bbox.x1.toFixed(0)}, {det.bbox.y1.toFixed(0)}, {det.bbox.x2.toFixed(0)}, {det.bbox.y2.toFixed(0)}]
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="detection-list-container">
-                                <div className="detection-item no-detections">
-                                  <span>{t('training.test.noDetections', '未检测到任何目标')}</span>
-                            </div>
-                          </div>
-                        )}
-                          </div>
+                <div className="test-right">
+                  {testResults ? (
+                    <>
+                      {testResults.annotated_image && (
+                        <div className="test-result-image">
+                          <img src={testResults.annotated_image} alt={t('training.test.detectionResult')} />
                         </div>
-                      </>
-                    ) : (
-                      <div className="test-results-section placeholder">
-                        <h4>{t('training.test.results')}</h4>
-                        <div className="test-results-info">
-                          <p>{t('training.test.uploadHint')}</p>
+                      )}
+                      <div className="test-detections-list">
+                        <div className="config-item">
+                          <label>{t('training.test.details')}</label>
+                          {testResults.detections && testResults.detections.length > 0 ? (
+                            <div className="detection-list-container">
+                              {testResults.detections.map((det: any, index: number) => (
+                                <div key={index} className="detection-item">
+                                  <span className="detection-class">{det.class_name}</span>
+                                  <span className="detection-confidence">
+                                    {t('training.test.confidence')}: {(det.confidence * 100).toFixed(2)}%
+                                  </span>
+                                  <span className="detection-bbox">
+                                    [{det.bbox.x1.toFixed(0)}, {det.bbox.y1.toFixed(0)}, {det.bbox.x2.toFixed(0)}, {det.bbox.y2.toFixed(0)}]
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="detection-list-container">
+                              <div className="detection-item no-detections">
+                                <span>{t('training.test.noDetections', '未检测到任何目标')}</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
-                  </div>
+                    </>
+                  ) : (
+                    <div className="test-results-section placeholder">
+                      <h4>{t('training.test.results')}</h4>
+                      <div className="test-results-info">
+                        <p>{t('training.test.uploadHint')}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="config-modal-actions">
-                <button
+              <DialogFooter className="config-modal-actions">
+                <Button
                   className="btn-start-training"
                   onClick={handleRunTest}
                   disabled={!testImage || isTesting}
                 >
                   {isTesting ? t('training.test.testing', '检测中...') : t('training.test.start', '开始检测')}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+                </Button>
+              </DialogFooter>
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
 
-        {/* 量化导出弹窗 */}
-        {showQuantModal && (
-          <div className="config-modal-overlay" onClick={() => {
-            if (isQuanting) {
-              if (!window.confirm(t('quantization.confirmClose'))) {
-                return;
-              }
+        {/* 量化导出弹窗（Dialog + Input） */}
+        <Dialog
+          open={showQuantModal}
+          onOpenChange={(open) => {
+            if (open) {
+              setShowQuantModal(true);
+              return;
             }
-            // Cleanup timers and state
+            if (isQuanting && !window.confirm(t('quantization.confirmClose'))) {
+              return;
+            }
             if (quantTimeoutRef.current) {
               clearTimeout(quantTimeoutRef.current);
               quantTimeoutRef.current = null;
@@ -1693,198 +1722,227 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
             setQuantProgress('');
             setQuantStartTime(null);
             setQuantElapsedTime(0);
-          }}>
-            <div className="config-modal quant-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="config-modal-header">
+            setQuantResult(null);
+          }}
+        >
+          <DialogContent className="config-modal quant-modal">
+            <DialogHeader className="config-modal-header">
+              <DialogTitle asChild>
                 <h3>{t('quantization.title')}</h3>
-                <button 
-                  className="close-btn" 
-                  onClick={() => {
-                    if (isQuanting) {
-                      if (!window.confirm(t('quantization.confirmClose'))) {
-                        return;
-                      }
-                    }
-                    // Cleanup timers and state
-                    if (quantTimeoutRef.current) {
-                      clearTimeout(quantTimeoutRef.current);
-                      quantTimeoutRef.current = null;
-                    }
-                    setShowQuantModal(false);
-                    setQuantProgress('');
-                    setQuantStartTime(null);
-                    setQuantElapsedTime(0);
-                  }}
-                  title={isQuanting ? t('training.quantization.closeWindowHint') : t('training.quantization.closeWindow')}
-                >
-                  <IoClose />
-                </button>
-              </div>
-              
-              <div className="config-modal-content">
-                {/* Form: only show when quantization hasn't started and no result */}
-                {!isQuanting && !quantResult && (
-                  <>
-                <div className="config-item">
-                      <label>{t('quantization.inputSize')}</label>
-                  <input
-                    type="number"
-                    min="32"
-                    max="2048"
-                    step="32"
-                    value={quantImgSz}
-                    onChange={(e) => setQuantImgSz(Math.max(32, Math.min(2048, parseInt(e.target.value || '0', 10))))}
-                  />
-                </div>
-
-                <div className="config-item checkbox-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={quantInt8}
-                      onChange={(e) => setQuantInt8(e.target.checked)}
+              </DialogTitle>
+              <DialogClose
+                className="close-btn"
+                onClick={() => {
+                  if (isQuanting && !window.confirm(t('quantization.confirmClose'))) {
+                    return;
+                  }
+                  if (quantTimeoutRef.current) {
+                    clearTimeout(quantTimeoutRef.current);
+                    quantTimeoutRef.current = null;
+                  }
+                  setShowQuantModal(false);
+                  setQuantProgress('');
+                  setQuantStartTime(null);
+                  setQuantElapsedTime(0);
+                  setQuantResult(null);
+                }}
+                disabled={isQuanting}
+              >
+                <IoClose />
+              </DialogClose>
+            </DialogHeader>
+            
+            <DialogBody className="config-modal-content">
+              {/* 表单：未开始量化且无结果时显示 */}
+              {!isQuanting && !quantResult && (
+                <>
+                  <div className="config-item">
+                    <label>{t('quantization.inputSize')}</label>
+                    <Input
+                      type="number"
+                      min={32}
+                      max={2048}
+                      step={32}
+                      value={quantImgSzInput}
+                      onChange={(e) => setQuantImgSzInput(e.target.value)}
+                      onBlur={() => {
+                        const num = parseInt(quantImgSzInput, 10);
+                        const clamped = isNaN(num) ? 256 : Math.min(2048, Math.max(32, num));
+                        setQuantImgSz(clamped);
+                        setQuantImgSzInput(clamped.toString());
+                      }}
+                      onFocus={() => setQuantImgSzInput(quantImgSz.toString())}
+                      disabled={isQuanting}
                     />
-                        <span>{t('quantization.useInt8')}</span>
-                  </label>
-                </div>
+                  </div>
 
-                <div className="config-item checkbox-row">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={quantNe301}
-                      onChange={(e) => setQuantNe301(e.target.checked)}
+                  <div className="config-item checkbox-row">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={quantInt8}
+                        onChange={(e) => setQuantInt8(e.target.checked)}
+                        disabled={isQuanting}
+                      />
+                      <span>{t('quantization.useInt8')}</span>
+                    </label>
+                  </div>
+
+                  <div className="config-item checkbox-row">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={quantNe301}
+                        onChange={(e) => setQuantNe301(e.target.checked)}
+                        disabled={isQuanting}
+                      />
+                      <span>{t('quantization.ne301Device')}</span>
+                    </label>
+                  </div>
+
+                  <div className="config-item">
+                    <label>{t('quantization.calibFraction')}</label>
+                    <Input
+                      type="number"
+                      step={0.05}
+                      min={0}
+                      max={1}
+                      value={quantFractionInput}
+                      onChange={(e) => setQuantFractionInput(e.target.value)}
+                      onBlur={() => {
+                        const num = parseFloat(quantFractionInput);
+                        const clamped = isNaN(num) ? 0.2 : Math.min(1, Math.max(0, num));
+                        setQuantFraction(clamped);
+                        setQuantFractionInput(clamped.toString());
+                      }}
+                      onFocus={() => setQuantFractionInput(quantFraction.toString())}
+                      disabled={isQuanting}
                     />
-                        <span>{t('quantization.ne301Device')}</span>
-                  </label>
-                </div>
-
-                <div className="config-item">
-                      <label>{t('quantization.calibFraction')}</label>
-                  <input
-                    type="number"
-                    step="0.05"
-                    min="0"
-                    max="1"
-                    value={quantFraction}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      if (!isNaN(v)) setQuantFraction(Math.min(1, Math.max(0, v)));
-                    }}
-                  />
-                </div>
-                  </>
-                )}
-
-                {/* Waiting process: show when quantization is in progress */}
-                {isQuanting && (
-                  <div className="quant-progress-section">
-                    <div className="quant-progress-header">
-                      <div className="quant-progress-spinner"></div>
-                      <span className="quant-progress-text">{t('quantization.inProgress')}</span>
-                    </div>
-                    {quantProgress && (
-                      <div className="quant-progress-message">
-                        {quantProgress}
-                      </div>
-                    )}
-                    {quantStartTime && (
-                      <div className="quant-progress-time">
-                        {t('quantization.elapsedTime')}: {quantElapsedTime} {t('quantization.seconds')}
-                      </div>
-                    )}
-                    <div className="quant-progress-hint">
-                      <p>{t('quantization.stepsDesc', '量化过程可能需要几分钟时间，包括：')}</p>
-                      <ul>
-                        <li>{t('quantization.steps.tflite')}</li>
-                        {quantNe301 && (
-                          <>
-                            <li>{t('quantization.steps.json')}</li>
-                            <li>{t('quantization.steps.compile')}</li>
-                          </>
-                        )}
-                      </ul>
-                    </div>
                   </div>
-                )}
+                </>
+              )}
 
-                {/* Result: show when quantization is completed */}
-                {quantResult && !isQuanting && (
-                  <div className="quant-result">
-                    <div className="quant-result-message">
-                      <strong>{t('quantization.result')}:</strong> {quantResult.message || t('common.success')}
+              {/* 量化进行中 */}
+              {isQuanting && (
+                <div className="quant-progress-section">
+                  <div className="quant-progress-header">
+                    <div className="quant-progress-spinner"></div>
+                    <span className="quant-progress-text">{t('quantization.inProgress')}</span>
+                  </div>
+                  {quantProgress && (
+                    <div className="quant-progress-message">
+                      {quantProgress}
                     </div>
-                    {quantResult.params && (
-                      <div className="quant-result-params">
-                        {t('quantization.params')}: imgsz={quantResult.params.imgsz}, int8={String(quantResult.params.int8)}, fraction={quantResult.params.fraction}
+                  )}
+                  {quantStartTime && (
+                    <div className="quant-progress-time">
+                      {t('quantization.elapsedTime')}: {quantElapsedTime} {t('quantization.seconds')}
+                    </div>
+                  )}
+                  <div className="quant-progress-hint">
+                    <p>{t('quantization.stepsDesc', '量化过程可能需要几分钟时间，包括：')}</p>
+                    <ul>
+                      <li>{t('quantization.steps.tflite')}</li>
+                      {quantNe301 && (
+                        <>
+                          <li>{t('quantization.steps.json')}</li>
+                          <li>{t('quantization.steps.compile')}</li>
+                        </>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* 量化结果 */}
+              {quantResult && !isQuanting && (
+                <div className="quant-result">
+                  <div className="quant-result-message">
+                    <strong>{t('quantization.result')}:</strong> {quantResult.message || t('common.success')}
+                  </div>
+                  {quantResult.params && (
+                    <div className="quant-result-params">
+                      {t('quantization.params')}: imgsz={quantResult.params.imgsz}, int8={String(quantResult.params.int8)}, fraction={quantResult.params.fraction}
+                    </div>
+                  )}
+                  <div className="quant-files-list">
+                    {quantResult.tflite_path && (
+                      <div className="quant-file-item">
+                        <div className="quant-file-info">
+                          <div className="quant-file-label">{t('quantization.files.tflite')}</div>
+                          <div className="quant-file-name">{quantResult.tflite_path.split('/').pop()}</div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="btn-download-file"
+                          onClick={() => handleDownloadExportFile('tflite')}
+                        >
+                          <IoDownload /> {t('quantization.download')}
+                        </Button>
                       </div>
                     )}
-                    <div className="quant-files-list">
-                      {quantResult.tflite_path && (
-                        <div className="quant-file-item">
-                          <div className="quant-file-info">
-                            <div className="quant-file-label">{t('quantization.files.tflite')}</div>
-                            <div className="quant-file-name">{quantResult.tflite_path.split('/').pop()}</div>
-                          </div>
-                          <button
-                            className="btn-download-file"
-                            onClick={() => handleDownloadExportFile('tflite')}
-                          >
-                            <IoDownload /> {t('quantization.download')}
-                          </button>
+                    {quantResult.ne301_tflite && (
+                      <div className="quant-file-item">
+                        <div className="quant-file-info">
+                          <div className="quant-file-label">{t('quantization.files.ne301Tflite')}</div>
+                          <div className="quant-file-name">{quantResult.ne301_tflite.split('/').pop()}</div>
                         </div>
-                      )}
-                      {quantResult.ne301_tflite && (
-                        <div className="quant-file-item">
-                          <div className="quant-file-info">
-                            <div className="quant-file-label">{t('quantization.files.ne301Tflite')}</div>
-                            <div className="quant-file-name">{quantResult.ne301_tflite.split('/').pop()}</div>
-                          </div>
-                          <button
-                            className="btn-download-file"
-                            onClick={() => handleDownloadExportFile('ne301_tflite')}
-                          >
-                            <IoDownload /> {t('quantization.download')}
-                          </button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="btn-download-file"
+                          onClick={() => handleDownloadExportFile('ne301_tflite')}
+                        >
+                          <IoDownload /> {t('quantization.download')}
+                        </Button>
+                      </div>
+                    )}
+                    {quantResult.ne301_json && (
+                      <div className="quant-file-item">
+                        <div className="quant-file-info">
+                          <div className="quant-file-label">{t('quantization.files.ne301Json')}</div>
+                          <div className="quant-file-name">{quantResult.ne301_json.split('/').pop()}</div>
                         </div>
-                      )}
-                      {quantResult.ne301_json && (
-                        <div className="quant-file-item">
-                          <div className="quant-file-info">
-                            <div className="quant-file-label">{t('quantization.files.ne301Json')}</div>
-                            <div className="quant-file-name">{quantResult.ne301_json.split('/').pop()}</div>
-                          </div>
-                          <button
-                            className="btn-download-file"
-                            onClick={() => handleDownloadExportFile('ne301_json')}
-                          >
-                            <IoDownload /> {t('quantization.download')}
-                          </button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="btn-download-file"
+                          onClick={() => handleDownloadExportFile('ne301_json')}
+                        >
+                          <IoDownload /> {t('quantization.download')}
+                        </Button>
+                      </div>
+                    )}
+                    {quantResult.ne301_model_bin && (
+                      <div className="quant-file-item model-package">
+                        <div className="quant-file-info">
+                          <div className="quant-file-label">{t('quantization.files.ne301Bin')}</div>
+                          <div className="quant-file-name">{quantResult.ne301_model_bin.split('/').pop()}</div>
                         </div>
-                      )}
-                      {quantResult.ne301_model_bin && (
-                        <div className="quant-file-item model-package">
-                          <div className="quant-file-info">
-                            <div className="quant-file-label">{t('quantization.files.ne301Bin')}</div>
-                            <div className="quant-file-name">{quantResult.ne301_model_bin.split('/').pop()}</div>
-                          </div>
-                          <button
-                            className="btn-download-file model-package"
-                            onClick={() => handleDownloadExportFile('ne301_model_bin')}
-                          >
-                            <IoDownload /> {t('training.quantization.downloadPackage')}
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          className="btn-download-file model-package"
+                          onClick={() => handleDownloadExportFile('ne301_model_bin')}
+                        >
+                          <IoDownload /> {t('training.quantization.downloadPackage')}
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+            </DialogBody>
 
-              <div className="config-modal-actions">
-                {/* 按钮：只在未开始量化且无结果时显示 */}
-                {!isQuanting && !quantResult && (
-                <button
+            <DialogFooter className="config-modal-actions">
+              {/* 未开始或无结果时显示“开始量化” */}
+              {!isQuanting && !quantResult && (
+                <Button
                   className="btn-start-training"
                   onClick={async () => {
                     if (!selectedTrainingId) return;
@@ -1894,105 +1952,95 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     const startTime = Date.now();
                     setQuantStartTime(startTime);
                     setQuantElapsedTime(0);
-                    
-                    // Clear previous timeout timer
+
                     if (quantTimeoutRef.current) {
                       clearTimeout(quantTimeoutRef.current);
                     }
-                    
-                    // Set timed updates for progress hints
+
                     const progressSteps = [
                       { delay: 3000, message: t('quantization.loadingModel') },
                       { delay: 8000, message: t('quantization.quantizing') },
                     ];
-                    
                     if (quantNe301) {
                       progressSteps.push(
                         { delay: 20000, message: t('quantization.generatingJson') },
                         { delay: 40000, message: t('quantization.compiling') }
                       );
                     }
-                    
                     progressSteps.forEach(({ delay, message }) => {
                       quantTimeoutRef.current = setTimeout(() => {
                         setQuantProgress(message);
                       }, delay);
                     });
-                    
+
                     try {
                       const response = await fetch(
                         `${API_BASE_URL}/projects/${projectId}/train/${selectedTrainingId}/export/tflite?imgsz=${quantImgSz}&int8=${quantInt8}&fraction=${quantFraction}&ne301=${quantNe301}`,
                         { method: 'POST' }
                       );
-                      
-                      // Clear all progress hint timers
+
                       if (quantTimeoutRef.current) {
                         clearTimeout(quantTimeoutRef.current);
                         quantTimeoutRef.current = null;
                       }
-                      
+
                       if (!response.ok) {
                         const err = await response.json();
                         throw new Error(err.detail || t('quantization.failed'));
                       }
-                      
+
                       const data = await response.json();
                       setQuantResult(data);
-                      
-                      // Show success message, but don't use alert (more user-friendly)
+
                       const finalElapsedTime = quantElapsedTime || (quantStartTime ? Math.floor((Date.now() - quantStartTime) / 1000) : 0);
                       const minutes = Math.floor(finalElapsedTime / 60);
                       const seconds = finalElapsedTime % 60;
                       const timeStr = minutes > 0 ? `${minutes}${t('quantization.minutes', '分')}${seconds}${t('quantization.seconds')}` : `${seconds}${t('quantization.seconds')}`;
                       setQuantProgress(`${t('quantization.success')}: ${timeStr}`);
-                      
-                      // Immediately clear progress hint, show result directly
+
                       setTimeout(() => {
                         setQuantProgress('');
                       }, 100);
                     } catch (error: any) {
-                      // Clear progress hint timer
                       if (quantTimeoutRef.current) {
                         clearTimeout(quantTimeoutRef.current);
                         quantTimeoutRef.current = null;
                       }
-                      
+
                       const errorMessage = error.message || 'Unknown error';
                       setQuantProgress(`✗ ${t('quantization.failed')}: ${errorMessage}`);
-                      
-                      // Show alert after 5 seconds, let user see error message in progress hint first
+
                       setTimeout(() => {
                         alert(`${t('quantization.failed')}: ${errorMessage}`);
                       }, 500);
                     } finally {
                       setIsQuanting(false);
                       setQuantStartTime(null);
-                      // Don't clear quantElapsedTime, keep final time display
                     }
                   }}
+                  disabled={isQuanting}
                 >
                   {t('training.quantization.startQuantize')}
-                </button>
-                )}
-                
-                {/* Action buttons after completion */}
-                {quantResult && !isQuanting && (
-                  <button
-                    className="btn-start-training"
-                    onClick={() => {
-                      setQuantResult(null);
-                      setQuantProgress('');
-                      setQuantElapsedTime(0);
-                      setQuantStartTime(null);
-                    }}
-                  >
-                    {t('quantization.reQuantize')}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
+                </Button>
+              )}
+
+              {/* 量化完成后显示重新量化 */}
+              {quantResult && !isQuanting && (
+                <Button
+                  className="btn-start-training"
+                  onClick={() => {
+                    setQuantResult(null);
+                    setQuantProgress('');
+                    setQuantElapsedTime(0);
+                    setQuantStartTime(null);
+                  }}
+                >
+                  {t('quantization.reQuantize')}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

@@ -4,6 +4,9 @@ import { Annotation, ImageInfo, Class } from './AnnotationWorkbench';
 import { API_BASE_URL } from '../config';
 import { IoTrash } from 'react-icons/io5';
 import './ControlPanel.css';
+import { Button } from '../ui/Button';
+import { Input } from '../ui/Input';
+import { FormField } from '../ui/FormField';
 
 // Icon component wrapper to resolve TypeScript type issues
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -326,13 +329,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                       {shortcutKey && (
                         <span className="class-shortcut">{shortcutKey}</span>
                       )}
-                      <button
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
                         className="class-delete-btn"
                         onClick={(e) => handleDeleteClass(cls.id, e)}
                         title={t('annotation.deleteClass')}
                       >
                         <Icon component={IoTrash} />
-                      </button>
+                      </Button>
                     </div>
                   );
                 })}
@@ -340,30 +346,38 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             )}
             <div className="create-class">
               <h4>{t('annotation.createClass')}</h4>
-              <input
-                type="text"
-                placeholder={t('annotation.className')}
-                value={newClassName}
-                onChange={(e) => setNewClassName(e.target.value)}
-                className="class-input"
-              />
+              <FormField >
+                <Input
+                  type="text"
+                  placeholder={t('annotation.className')}
+                  value={newClassName}
+                  onChange={(e) => setNewClassName(e.target.value)}
+                  className="class-input"
+                />
+              </FormField>
               <div className="color-input-group">
-                <input
+                <Input
                   type="color"
                   value={newClassColor}
                   onChange={(e) => setNewClassColor(e.target.value)}
                   className="color-picker"
                 />
-                <input
+                <Input
                   type="text"
                   value={newClassColor}
                   onChange={(e) => setNewClassColor(e.target.value)}
                   className="color-text"
                 />
               </div>
-              <button onClick={handleCreateClass} className="btn-create-class">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={handleCreateClass}
+                className="btn-create-class"
+              >
                 {t('common.create', '创建')}
-              </button>
+              </Button>
             </div>
           </div>
 
@@ -395,7 +409,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         </div>
                       </div>
                       {onAnnotationDelete && (
-                        <button
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
                           className="annotation-delete-btn"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -406,7 +423,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                           title={t('annotation.delete')}
                         >
                           <Icon component={IoTrash} />
-                        </button>
+                        </Button>
                       )}
                     </div>
                   );
@@ -428,7 +445,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   </div>
                 )}
               </div>
-              <button
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
                 onClick={handleUploadClick}
                 disabled={isUploading}
                 className="btn-upload"
@@ -441,7 +461,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 ) : (
                   t('annotation.uploadImages')
                 )}
-              </button>
+              </Button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -472,14 +492,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                         {img.width} × {img.height}
                       </div>
                     </div>
-                    <button
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
                       className="file-delete-btn"
                       onClick={(e) => handleDeleteImage(img.id, e)}
                       disabled={isDeletingThis}
                       title={t('annotation.deleteImage')}
                     >
                       {isDeletingThis ? '...' : <Icon component={IoTrash} />}
-                    </button>
+                    </Button>
                   </div>
                 );
               })}

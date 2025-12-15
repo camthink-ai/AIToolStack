@@ -9,28 +9,13 @@
 }
 
 .language-btn {
-  height: var(--btn-height-sm);
-  min-height: var(--btn-height-sm);
-  padding: var(--btn-padding-sm);
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--btn-font-size);
-  line-height: var(--btn-line-height);
-  font-weight: var(--font-weight-medium);
-  transition: all var(--transition-base);
+  /* Layout-only tweaks; visuals (height, colors, hover) come from Button variant/size */
+  padding: 0 var(--spacing-md);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-sm);
   box-sizing: border-box;
-}
-
-.language-btn:hover {
-  background: var(--bg-secondary);
-  border-color: var(--accent-color);
 }
 
 .language-icon {
@@ -68,31 +53,25 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-lg);
-  min-width: 120px;
+  min-width: 180px;
   z-index: 1001; /* Higher than modal overlays (1000) to ensure visibility above all modals */
   overflow: hidden;
 }
 
 .language-dropdown-item {
-  display: block;
   width: 100%;
-  padding: 10px var(--spacing-lg);
-  background: transparent;
-  border: none;
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: 0;
   text-align: left;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: var(--font-size-md);
-  transition: background var(--transition-base);
-}
-
-.language-dropdown-item:hover {
-  background: var(--bg-secondary);
+  box-sizing: border-box;
+  white-space: normal;
+  height: auto;
+  min-height: auto;
 }
 
 .language-dropdown-item.active {
-  background: var(--accent-light);
-  color: var(--accent-color);
   font-weight: var(--font-weight-medium);
 }
 
