@@ -80,6 +80,7 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
   const annotationCacheRef = React.useRef<Record<number, Annotation[]>>({});
   const annotationsAbortRef = React.useRef<AbortController | null>(null);
+  const imageListRefreshTimeoutRef = React.useRef<number | null>(null);
 
   // Close dropdown menu when clicking outside
   useEffect(() => {
@@ -202,6 +203,33 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
       // Reset history to new image's annotation history
       setHistory([annotationsList]);
       setHistoryIndex(0);
+
+      // Prefetch annotations of neighbor images in background to speed up navigation
+      const neighborIndices = [currentImageIndex - 1, currentImageIndex + 1];
+      neighborIndices.forEach((idx) => {
+        const neighborImage = images[idx];
+        if (!neighborImage) return;
+        const neighborId = neighborImage.id;
+        if (annotationCacheRef.current[neighborId]) return;
+
+        // Fire and forget, do not override current annotations
+        fetch(`${API_BASE_URL}/projects/${project.id}/images/${neighborId}`)
+          .then(res => {
+            if (!res.ok) return null;
+            return res.json();
+          })
+          .then(neighborData => {
+            if (!neighborData) return;
+            const neighborAnnotations = (neighborData.annotations || []).map((ann: any) => ({
+              ...ann,
+              classId: ann.classId ?? ann.class_id ?? ann.classid ?? null
+            }));
+            annotationCacheRef.current[neighborId] = neighborAnnotations;
+          })
+          .catch(err => {
+            console.error('Failed to prefetch neighbor annotations:', err);
+          });
+      });
     } catch (error: any) {
       if (error?.name === 'AbortError') {
         return;
@@ -217,19 +245,33 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   useWebSocket(project.id, useCallback((message: any) => {
     console.log('[WebSocket] Received message:', message);
     
+    const scheduleRefreshImages = () => {
+      // Simple debounce: merge frequent status updates into one refresh
+      if (imageListRefreshTimeoutRef.current !== null) {
+        window.clearTimeout(imageListRefreshTimeoutRef.current);
+      }
+      imageListRefreshTimeoutRef.current = window.setTimeout(() => {
+        fetchImages()
+          .then(() => {
+            console.log('[WebSocket] Image list refreshed');
+          })
+          .catch(error => {
+            console.error('[WebSocket] Failed to refresh image list:', error);
+          })
+          .finally(() => {
+            imageListRefreshTimeoutRef.current = null;
+          });
+      }, 200);
+    };
+
     if (message.type === 'new_image') {
       console.log('[WebSocket] New image notification received:', message);
-      // Immediately refresh image list
-      fetchImages().then(() => {
-        console.log('[WebSocket] Image list refreshed after new image notification');
-      }).catch(error => {
-        console.error('[WebSocket] Failed to refresh image list:', error);
-      });
+      scheduleRefreshImages();
     } else if (message.type === 'image_status_updated') {
       // Image status updated (annotation create/delete causes status change)
       console.log('[WebSocket] Image status updated:', message);
-      // Refresh image list to update status display
-      fetchImages();
+      // Debounced refresh image list to update status display
+      scheduleRefreshImages();
     } else if (message.type === 'annotation_deleted') {
       // Annotation deleted, refresh annotation list and image list
       const deletedImageId = message.image_id;
@@ -253,9 +295,41 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   }, [project.id]);
 
   useEffect(() => {
+    // Only re-load annotations when the current image index changes,
+    // avoid repeated loading when image list status updates
     fetchAnnotations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentImageIndex, images]);
+  }, [currentImageIndex]);
+
+  // Preload neighbor images to make switching smoother
+  useEffect(() => {
+    if (currentImageIndex < 0 || images.length === 0) return;
+
+    const preloadImage = (idx: number) => {
+      const imgInfo = images[idx];
+      if (!imgInfo) return;
+
+      let imagePath = imgInfo.path;
+      if (!imagePath.includes('raw/')) {
+        imagePath = `raw/${imagePath}`;
+      } else if (imagePath.startsWith(project.id + '/')) {
+        const rawIndex = imagePath.indexOf('raw/');
+        if (rawIndex !== -1) {
+          imagePath = imagePath.substring(rawIndex);
+        }
+      }
+      const imageUrl = imgInfo.path.startsWith('http')
+        ? imgInfo.path
+        : `${API_BASE_URL}/images/${project.id}/${imagePath}`;
+
+      const img = new Image();
+      img.src = imageUrl;
+    };
+
+    // Preload previous and next images (if exist)
+    const neighbors = [currentImageIndex - 1, currentImageIndex + 1];
+    neighbors.forEach(preloadImage);
+  }, [currentImageIndex, images, project.id]);
 
   // Sync cache (when user operates on current image, ensure cache is also updated)
   useEffect(() => {
