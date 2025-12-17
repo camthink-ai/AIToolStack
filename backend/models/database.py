@@ -108,6 +108,28 @@ class TrainingRecord(Base):
     project = relationship("Project")
 
 
+class ModelRegistry(Base):
+    """Unified model registry (includes training-produced and externally imported models)"""
+    __tablename__ = "model_registry"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    source = Column(String, nullable=False, default="training")  # training / import / other
+    project_id = Column(String, ForeignKey("projects.id"), nullable=True, index=True)
+    training_id = Column(String, ForeignKey("training_records.training_id"), nullable=True, index=True)
+    model_type = Column(String, nullable=True)  # yolov8 / yolov11 / tflite / ne301 / onnx / etc.
+    format = Column(String, nullable=True)  # pt / tflite / onnx / bin / etc.
+    model_path = Column(Text, nullable=False)
+    input_width = Column(Integer, nullable=True)
+    input_height = Column(Integer, nullable=True)
+    num_classes = Column(Integer, nullable=True)
+    class_names = Column(Text, nullable=True)  # JSON array string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    project = relationship("Project")
+
+
 class TrainingLog(Base):
     """Training log table"""
     __tablename__ = "training_logs"

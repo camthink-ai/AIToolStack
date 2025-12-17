@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFoo
 import { Button } from '../ui/Button';
 import { FormField } from '../ui/FormField';
 import { Select, SelectItem } from '../ui/Select';
+import { Alert } from '../ui/Alert';
+import { useAlert } from '../hooks/useAlert';
 
 interface DatasetImportModalProps {
   isOpen: boolean;
@@ -28,6 +30,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
   defaultProjectId
 }) => {
   const { t } = useTranslation();
+  const { alertState, showSuccess, showError, showWarning, closeAlert } = useAlert();
   const [selectedProjectId, setSelectedProjectId] = useState<string>(defaultProjectId || '');
   const [importFormat, setImportFormat] = useState<'coco' | 'yolo' | 'project_zip'>('project_zip');
   const [isUploading, setIsUploading] = useState(false);
@@ -54,13 +57,13 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
     if (!files || files.length === 0) return;
 
     if (!selectedProjectId) {
-      alert(t('annotation.import.selectProjectFirst', 'Please select a project first'));
+      showWarning(t('annotation.import.selectProjectFirst', 'Please select a project first'));
       return;
     }
 
     // Handle dataset format import (COCO / YOLO / Project ZIP)
     if (files.length !== 1) {
-      alert(t('annotation.import.singleFileRequired', 'Please select a dataset file'));
+      showWarning(t('annotation.import.singleFileRequired', 'Please select a dataset file'));
       return;
     }
 
@@ -90,9 +93,9 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
         });
         
         if (result.errors && result.errors.length > 0) {
-          alert(`${message}\n\n${t('common.errorDetails', 'Error details')}:\n${result.errors.slice(0, 5).join('\n')}`);
+          showWarning(`${message}\n\n${t('common.errorDetails', 'Error details')}:\n${result.errors.slice(0, 5).join('\n')}`);
         } else {
-          alert(message);
+          showSuccess(message);
         }
         
         if (onImportComplete) {
@@ -101,11 +104,11 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
         onClose();
       } else {
         const errorData = await response.json().catch(() => ({ detail: t('annotation.import.importFailed', 'Import failed') }));
-        alert(`${t('annotation.import.importFailed', 'Import failed')}: ${errorData.detail || 'Unknown error'}`);
+        showError(`${t('annotation.import.importFailed', 'Import failed')}: ${errorData.detail || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to import dataset:', error);
-      alert(`${t('annotation.import.importFailed', 'Import failed')}: ${t('common.connectionError', 'Unable to connect to server')}`);
+      showError(`${t('annotation.import.importFailed', 'Import failed')}: ${t('common.connectionError', 'Unable to connect to server')}`);
     } finally {
       setUploadProgress(null);
       setIsUploading(false);
@@ -117,7 +120,7 @@ export const DatasetImportModal: React.FC<DatasetImportModalProps> = ({
 
   const handleUploadClick = () => {
     if (!selectedProjectId) {
-      alert(t('annotation.import.selectProjectFirst', 'Please select a project first'));
+      showWarning(t('annotation.import.selectProjectFirst', 'Please select a project first'));
       return;
     }
     fileInputRef.current?.click();

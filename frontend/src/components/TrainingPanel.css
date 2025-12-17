@@ -260,6 +260,293 @@
   min-width: 0;
 }
 
+/* ===== ModelSpace & Training list shared table styles ===== */
+.training-content {
+  margin-top: var(--spacing-lg);
+  /* Make training-content scrollable within project-selector-content */
+  max-height: calc(100vh - var(--header-height, 60px) - var(--spacing-xl, 24px) * 2 - 120px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Hide scrollbar but keep scroll functionality */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.training-content::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.training-list {
+  background: var(--bg-primary);
+  padding: 0;
+  overflow-y: visible;
+  overflow-x: auto;
+  /* Remove max-height constraint, let parent handle scrolling */
+  max-height: none;
+  /* Hide horizontal scrollbar but keep scroll functionality */
+  scrollbar-width: thin; /* Firefox - keep thin for horizontal scroll */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.training-list::-webkit-scrollbar {
+  height: 6px; /* Show thin horizontal scrollbar */
+  width: 6px; /* Show thin vertical scrollbar (if needed) */
+}
+
+.training-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.training-list::-webkit-scrollbar-thumb {
+  background: var(--border-color, rgba(255, 255, 255, 0.2));
+  border-radius: 3px;
+}
+
+.training-list::-webkit-scrollbar-thumb:hover {
+  background: var(--border-dark, rgba(255, 255, 255, 0.3));
+}
+
+.training-empty {
+  width: 100%;
+  padding: 80px 40px;
+  text-align: center;
+  color: var(--text-light);
+  font-size: var(--font-size-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+}
+
+.training-empty-title {
+  font-size: 1.1rem;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+}
+
+.training-empty-desc {
+  margin: 0;
+  max-width: 520px;
+  line-height: 1.6;
+}
+
+.training-table {
+  width: 100%;
+  min-width: 960px;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: var(--font-size-sm);
+}
+
+.training-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--bg-primary);
+  z-index: 1;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.training-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.training-table th,
+.training-table td {
+  padding: 10px var(--spacing-md);
+  text-align: center;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  line-height: 1.5;
+}
+
+.training-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.training-table td code {
+  font-family: var(--font-family-mono, monospace);
+  font-size: inherit;
+  background: transparent;
+  padding: 0;
+  border: none;
+  color: inherit;
+}
+
+.training-table th {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  text-transform: none;
+}
+
+/* Model Space header: bolder and slightly larger */
+.model-table thead th {
+  font-weight: var(--font-weight-semibold, 600);
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+}
+
+.training-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+
+
+
+
+.table-caption {
+  caption-side: bottom;
+  padding: var(--spacing-xs) 0 0 0;
+  color: var(--text-light);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+
+.model-table {
+  width: 100%;
+}
+
+.model-table .col-project { width: 24%; }
+.model-table .col-type { width: 10%; }
+.model-table .col-source { width: 10%; text-align: center; }
+.model-table .col-classes { width: 16%; }
+.model-table .col-metrics { width: 18%; }
+.model-table .col-imgsz { width: 10%; }
+.model-table .col-time { width: 10%; }
+.model-table .col-actions { width: 12%; }
+
+
+
+.actions-popover-item {
+  display: flex;
+  justify-content: center;
+}
+
+/* Model info */
+.model-info {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: var(--font-size-sm);
+}
+
+/* Model main cell (ModelSpace) */
+.model-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.model-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.model-type {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.model-format {
+  font-size: var(--font-size-xs);
+  color: var(--text-light);
+}
+
+.model-sub {
+  font-size: var(--font-size-xs);
+  color: var(--text-light);
+}
+
+/* Simplified metrics */
+.metrics-simple {
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* Simplified actions cell */
+.actions-cell {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+}
+
+.action-btn {
+  min-width: 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) 0;
+  margin-top: var(--spacing-md);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.pagination-info {
+  color: var(--text-light);
+  font-size: var(--font-size-xs);
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.pagination-page {
+  min-width: 60px;
+  text-align: center;
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  padding: 0 var(--spacing-sm);
+}
+
+.pagination-actions .icon-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  min-width: 28px;
+}
+
+.pagination-actions .icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.training-error {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm);
+  background: var(--error-light);
+  color: var(--error-color);
+  font-size: var(--font-size-sm);
+}
+
 .training-status-section {
   padding: var(--spacing-lg) var(--spacing-xl);
   border-bottom: 1px solid var(--border-color);
@@ -725,10 +1012,6 @@
   box-sizing: border-box;
 }
 
-.btn-start-training {
-  /* Layout-only tweaks for primary action button in modals */
-}
-
 .no-training-selected {
   flex: 1;
   display: flex;
@@ -815,15 +1098,7 @@
   justify-content: flex-end;
 }
 
-.btn-cancel {
-  /* Kept for legacy markup; visual styles now come from Button variants */
-}
-
-/* Test model related styles */
-.btn-test-model,
-.btn-quant-model {
-  /* Legacy class hooks; spacing handled by container, visuals by Button */
-}
+/* Legacy class hooks retained for compatibility; visuals now from Button variants */
 
 .test-modal {
   max-width: 900px;
@@ -903,11 +1178,19 @@
   background: var(--bg-secondary);
   transition: all 0.2s;
   overflow: hidden;
+  position: relative;
 }
 
 .test-upload-area:hover {
   border-color: var(--primary-color);
   background: rgba(10, 13, 22, 0.05);
+}
+
+.test-upload-area.dragging {
+  border-color: var(--primary-color);
+  background: rgba(10, 13, 22, 0.1);
+  border-style: solid;
+  box-shadow: 0 0 0 3px rgba(10, 13, 22, 0.1);
 }
 
 .test-upload-placeholder {
@@ -1469,4 +1752,40 @@
   .status-info {
     grid-template-columns: 1fr;
   }
+}
+
+/* Browse modal styles */
+.browse-modal .browse-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) 0;
+}
+
+.browse-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+}
+
+.browse-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.browse-file-info strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.browse-file-name {
+  color: var(--text-light);
+  font-size: var(--font-size-xs);
+  word-break: break-all;
 }

@@ -15,7 +15,7 @@ interface Project {
   updated_at?: string;
 }
 
-type MenuItem = 'dashboard' | 'projects';
+type MenuItem = 'dashboard' | 'projects' | 'models';
 
 function App() {
   const [activeMenu, setActiveMenu] = useState<MenuItem>('dashboard');
@@ -23,6 +23,7 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showTrainingPanel, setShowTrainingPanel] = useState(false);
   const [trainingProjectId, setTrainingProjectId] = useState<string | null>(null);
+  const [trainingInitialId, setTrainingInitialId] = useState<string | null>(null);
 
   useEffect(() => {
     // Load project list
@@ -56,23 +57,22 @@ function App() {
 
   const handleMenuChange = (menu: MenuItem) => {
     setActiveMenu(menu);
-    if (menu === 'projects') {
-      setSelectedProject(null);
-      setShowTrainingPanel(false);
-    } else {
-      setSelectedProject(null);
-      setShowTrainingPanel(false);
-    }
+    setSelectedProject(null);
+    setShowTrainingPanel(false);
+    setTrainingProjectId(null);
+    setTrainingInitialId(null);
   };
 
-  const handleOpenTrainingPanel = (projectId: string) => {
+  const handleOpenTrainingPanel = (projectId: string, trainingId?: string) => {
     setTrainingProjectId(projectId);
+    setTrainingInitialId(trainingId ?? null);
     setShowTrainingPanel(true);
   };
 
   const handleCloseTrainingPanel = () => {
     setShowTrainingPanel(false);
     setTrainingProjectId(null);
+    setTrainingInitialId(null);
   };
 
   // Render main content
@@ -82,6 +82,7 @@ function App() {
       return (
         <TrainingPanel
           projectId={trainingProjectId}
+          initialTrainingId={trainingInitialId ?? undefined}
           onClose={handleCloseTrainingPanel}
         />
       );
@@ -111,14 +112,24 @@ function App() {
         );
 
       case 'projects':
-    return (
-        <ProjectSelector
-          projects={projects}
-          onSelect={handleProjectSelect}
-          onRefresh={fetchProjects}
+        return (
+          <ProjectSelector
+            projects={projects}
+            onSelect={handleProjectSelect}
+            onRefresh={fetchProjects}
             onOpenTraining={handleOpenTrainingPanel}
-        />
-    );
+          />
+        );
+
+      case 'models':
+        // Lazy import to avoid circular dependency issues
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { ModelSpace } = require('./components/ModelSpace');
+        return (
+          <ModelSpace
+            onOpenTraining={handleOpenTrainingPanel}
+          />
+        );
 
       default:
         return null;

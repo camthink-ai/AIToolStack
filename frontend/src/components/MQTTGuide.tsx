@@ -182,15 +182,15 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="btn-copy"
-                      onClick={() => copyToClipboard(
-                        `${mqttStatus?.server_ip || mqttStatus?.broker || ''}${mqttStatus?.server_port ? `:${mqttStatus.server_port}` : (mqttStatus?.port ? `:${mqttStatus.port}` : ':8000')}`,
-                        'serverIp'
-                      )}
-                      title={t('mqtt.copy')}
-                    >
-                      <Icon component={IoCopyOutline} />
-                      {copied === 'serverIp' && <span className="copied-tooltip">{t('mqtt.copied')}</span>}
+                        className="btn-copy"
+                        onClick={() => copyToClipboard(
+                          `${mqttStatus?.server_ip || mqttStatus?.broker || ''}${mqttStatus?.server_port ? `:${mqttStatus.server_port}` : (mqttStatus?.port ? `:${mqttStatus.port}` : ':8000')}`,
+                          'serverIp'
+                        )}
+                        title={t('mqtt.copy')}
+                      >
+                        <Icon component={IoCopyOutline} />
+                        {copied === 'serverIp' && <span className="copied-tooltip">{t('mqtt.copied')}</span>}
                     </Button>
                     )}
                   </div>

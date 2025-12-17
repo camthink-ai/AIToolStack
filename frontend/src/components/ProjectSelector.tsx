@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { API_BASE_URL } from '../config';
-import { IoRefresh, IoAdd, IoFolder, IoTrash, IoClose, IoWarning } from 'react-icons/io5';
+import { IoRefresh, IoAdd, IoFolder, IoTrash, IoClose } from 'react-icons/io5';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,6 +11,10 @@ import { Button } from '../ui/Button';
 import { FormField } from '../ui/FormField';
 import { Input } from '../ui/Input';
 import { Textarea } from '../ui/Textarea';
+import { Alert } from '../ui/Alert';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { useAlert } from '../hooks/useAlert';
+import { useConfirm } from '../hooks/useConfirm';
 
 // Icon component wrapper to resolve TypeScript type issues
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -29,7 +33,7 @@ interface ProjectSelectorProps {
   projects: Project[];
   onSelect: (project: Project) => void;
   onRefresh: () => void;
-  onOpenTraining?: (projectId: string) => void;
+  onOpenTraining?: (projectId: string, trainingId?: string) => void;
 }
 
 export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
@@ -39,11 +43,9 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
   onOpenTraining
 }) => {
   const { t, i18n } = useTranslation();
+  const { alertState, showError, closeAlert } = useAlert();
+  const { confirmState, showConfirm, closeConfirm } = useConfirm();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ project: Project | null; show: boolean }>({
-    project: null,
-    show: false
-  });
   const [isDeleting, setIsDeleting] = useState(false);
 
   type CreateProjectForm = {
@@ -95,11 +97,11 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         // onSelect(newProject);
       } else {
         const errorData = await response.json().catch(() => ({ detail: t('project.createFailed') }));
-        alert(errorData.detail || t('project.createFailed'));
+        showError(errorData.detail || t('project.createFailed'));
       }
     } catch (error) {
       console.error('Failed to create project:', error);
-      alert(`${t('project.createFailed')}: ${t('common.connectionError', 'Unable to connect to server')}`);
+      showError(`${t('project.createFailed')}: ${t('common.connectionError', 'Unable to connect to server')}`);
     }
   };
 
@@ -110,35 +112,36 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
 
   const handleDeleteProject = (e: React.MouseEvent, project: Project) => {
     e.stopPropagation(); // Prevent triggering project selection
-    setDeleteConfirm({ project, show: true });
-  };
+    
+    const deleteMessage = t('project.confirmDelete', { name: project.name || '' }) + '\n\n' + t('project.deleteWarning', '此操作不可恢复，将删除项目中的所有图像、标注和配置。');
+    
+    showConfirm(
+      deleteMessage,
+      async () => {
+        setIsDeleting(true);
+        try {
+          const response = await fetch(`${API_BASE_URL}/projects/${project.id}`, {
+            method: 'DELETE',
+          });
 
-  const confirmDelete = async () => {
-    if (!deleteConfirm.project) return;
-
-    setIsDeleting(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/projects/${deleteConfirm.project.id}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        setDeleteConfirm({ project: null, show: false });
-        onRefresh();
-      } else {
-        const errorData = await response.json().catch(() => ({ detail: t('project.deleteFailed') }));
-        alert(errorData.detail || t('project.deleteFailed'));
+          if (response.ok) {
+            onRefresh();
+          } else {
+            const errorData = await response.json().catch(() => ({ detail: t('project.deleteFailed') }));
+            showError(errorData.detail || t('project.deleteFailed'));
+          }
+        } catch (error) {
+          console.error('Failed to delete project:', error);
+          showError(`${t('project.deleteFailed')}: ${t('common.connectionError', 'Unable to connect to server')}`);
+        } finally {
+          setIsDeleting(false);
+        }
+      },
+      {
+        title: t('project.delete', '删除项目'),
+        variant: 'danger',
       }
-    } catch (error) {
-      console.error('Failed to delete project:', error);
-      alert(`${t('project.deleteFailed')}: ${t('common.connectionError', 'Unable to connect to server')}`);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const cancelDelete = () => {
-    setDeleteConfirm({ project: null, show: false });
+    );
   };
 
   const formatDate = (dateString?: string) => {
@@ -175,12 +178,10 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           </div>
         </div>
         {projects.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon"><Icon component={IoFolder} /></div>
-            <p>{t('project.noProjects')}</p>
-            <Button onClick={() => setShowCreateModal(true)}>
-              {t('project.create')}
-            </Button>
+          <div className="training-empty">
+            <p className="training-empty-desc">
+              {t('project.noProjects')}
+            </p>
           </div>
         ) : (
           <div className="project-list-section">
@@ -275,57 +276,34 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
         </DialogContent>
       </Dialog>
 
-      {/* 删除确认弹窗（Radix Dialog） */}
-      <Dialog
-        open={deleteConfirm.show && !!deleteConfirm.project}
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmState.open}
         onOpenChange={(open) => {
-          if (!open) {
-            cancelDelete();
+          if (!open && !isDeleting) {
+            closeConfirm();
           }
         }}
-      >
-        <DialogContent className="config-modal delete-modal">
-          <DialogHeader className="config-modal-header">
-            <DialogTitle asChild>
-              <h3>{t('project.delete')}</h3>
-            </DialogTitle>
-            <DialogClose className="close-btn" onClick={cancelDelete} disabled={isDeleting}>
-              <Icon component={IoClose} />
-            </DialogClose>
-          </DialogHeader>
-          <DialogBody className="config-modal-content">
-            {deleteConfirm.project && (
-              <div className="delete-warning">
-                <div className="warning-icon"><Icon component={IoWarning} /></div>
-                <p>
-                  {t('project.confirmDelete', { name: deleteConfirm.project?.name || '' })}
-                </p>
-                <p className="warning-text">
-                  {t('project.deleteWarning', '此操作不可恢复，将删除项目中的所有图像、标注和配置。')}
-                </p>
-              </div>
-            )}
-          </DialogBody>
-          <DialogFooter className="config-modal-actions">
-            <Button
-              type="button"
-              onClick={confirmDelete}
-              disabled={isDeleting}
-              className="btn-danger"
-            >
-              {isDeleting ? t('common.loading') : t('common.confirm')}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={cancelDelete}
-              disabled={isDeleting}
-            >
-              {t('common.cancel')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText={isDeleting ? t('common.loading', '加载中...') : confirmState.confirmText}
+        cancelText={confirmState.cancelText}
+        onConfirm={confirmState.onConfirm || (() => {})}
+        onCancel={confirmState.onCancel}
+        variant={confirmState.variant}
+        disabled={isDeleting}
+      />
+
+      {/* Alert Dialog */}
+      <Alert
+        open={alertState.open}
+        onOpenChange={closeAlert}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        confirmText={alertState.confirmText || t('common.confirm', '确定')}
+        onConfirm={alertState.onConfirm}
+      />
     </div>
   );
 };

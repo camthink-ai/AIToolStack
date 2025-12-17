@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { LanguageSwitcher } from './LanguageSwitcher';
-import { IoHome, IoPricetag } from 'react-icons/io5';
+import { IoHome, IoPricetag, IoCube } from 'react-icons/io5';
 import './TopNavigation.css';
 
 // Icon component wrapper
@@ -9,7 +9,7 @@ const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Co
   return <Component />;
 };
 
-type MenuItem = 'dashboard' | 'projects';
+type MenuItem = 'dashboard' | 'projects' | 'models';
 
 interface TopNavigationProps {
   activeMenu: MenuItem;
@@ -22,6 +22,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ activeMenu, onMenu
   const menuItems: Array<{ key: MenuItem; label: string; icon: React.ReactNode }> = [
     { key: 'dashboard', label: t('nav.dashboard', '工作台'), icon: <Icon component={IoHome} /> },
     { key: 'projects', label: t('nav.projects', '项目管理'), icon: <Icon component={IoPricetag} /> },
+    { key: 'models', label: t('nav.models', '模型空间'), icon: <Icon component={IoCube} /> },
   ];
 
   return (
@@ -29,7 +30,7 @@ export const TopNavigation: React.FC<TopNavigationProps> = ({ activeMenu, onMenu
       <div className="nav-container">
         <div className="nav-left">
           <div className="nav-logo">
-            <span className="logo-text">AI Tool Stack</span>
+            <span className="logo-text">CamThink AI Tool Stack</span>
           </div>
           <nav className="nav-menu">
             {menuItems.map((item) => (

@@ -1,5 +1,6 @@
 import React from 'react';
 import * as RadixSelect from '@radix-ui/react-select';
+import { IoChevronDown } from 'react-icons/io5';
 import './ui.css';
 
 type SelectProps = {
@@ -23,7 +24,9 @@ export const Select: React.FC<SelectProps> = ({
     <RadixSelect.Root value={value} onValueChange={onValueChange} disabled={disabled}>
       <RadixSelect.Trigger className={['input-base select-trigger', className].filter(Boolean).join(' ')}>
         <RadixSelect.Value placeholder={placeholder} />
-        <RadixSelect.Icon className="select-icon">▾</RadixSelect.Icon>
+        <RadixSelect.Icon className="select-icon">
+          <IoChevronDown size={16} />
+        </RadixSelect.Icon>
       </RadixSelect.Trigger>
       <RadixSelect.Portal>
         <RadixSelect.Content className="select-content" position="popper">

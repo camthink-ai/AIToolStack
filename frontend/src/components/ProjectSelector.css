@@ -30,6 +30,16 @@
   border-radius: var(--radius-lg);
   padding: var(--spacing-xl);
   box-shadow: var(--shadow-md);
+  max-height: calc(100vh - var(--header-height, 60px) - var(--spacing-xl, 24px) * 2);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Hide scrollbar but keep scroll functionality */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.project-selector-content::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 .project-list-section {
@@ -224,6 +234,8 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--spacing-xl);
+  /* Ensure grid can scroll within parent */
+  min-height: 0;
 }
 
 .project-card {
@@ -323,39 +335,7 @@
   font-size: 0.85em;
 }
 
-.empty-state {
-  width: 100%;
-  text-align: center !important;
-  color: var(--text-light);
-  padding: 80px 40px;
-  display: flex !important;
-  flex-direction: column;
-  align-items: center !important;
-  justify-content: center;
-  gap: 24px;
-  border: none;
-  background: transparent;
-  margin: 0 auto;
-  max-width: 100%;
-}
-
-.empty-icon {
-  font-size: 4em;
-  opacity: 0.5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.empty-icon svg {
-  width: 64px;
-  height: 64px;
-}
-
-.empty-state p {
-  font-size: 1.2em;
-  margin: 0;
-}
+/* empty-state styles removed; Project now reuses training-empty styles from TrainingPanel.css */
 
 /* 弹窗样式 */
 .modal-overlay {

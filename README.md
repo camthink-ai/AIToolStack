@@ -2,18 +2,35 @@
 
 [English](README.md) | [中文](README.zh.md)
 
-AI Tool Stack is an end-to-end edge-AI toolkit for [NeoEyes NE301](https://github.com/camthink-ai/ne301), covering data collection, labeling, training, quantization, and deployment. It can be self-hosted and continuously updated.
+![Dashboard](img/Topology.png)
+
+AI Tool Stack is an end-to-end edge AI toolkit dedicated to [NeoEyes NE301](https://github.com/camthink-ai/ne301), covering data collection, annotation, training, quantization, and deployment.
+
+Why do we need AI Tool Stack when there are many annotation tools in the community? CamThink focuses on the usability and sustainability of model edge deployment. Therefore, unlike traditional Vision AI workflows that think about scenarios first, annotate data, train models, and then consider edge deployment, we first clarify the hardware foundation for edge deployment, and then collect physical world images based on the hardware and quickly deploy models to rapidly solve AI implementation problems in fragmented scenarios. This tool, combined with the device, can complete the full cycle of device raw image data collection, annotation, training, quantization, edge deployment, and then image collection, dataset enrichment, retraining, and redeployment to achieve the feasibility of visual models for single scenarios. We focus on the actual value and investment cost of AI implementation and hope to accelerate this process.
+
+The model training and quantization capabilities of this tool depend on the open-source library [ultralytics](https://github.com/ultralytics/ultralytics). Special thanks!
+
+**If you need to understand how this tool works with NE301 for a complete workflow, please read the documentation in detail: [NE301 and AI Tool Stack Guide](https://wiki.camthink.ai/docs/neoeyes-ne301-series/application-guide/ai-tool-stack/)**
 
 ![Dashboard](img/dashboard.png)
 ![AI Model Project](img/ai-model-project.png)
 ![Annotation Workbench](img/Annotation%20tool.png)
 ![Train model](/img/Train%20model.png)
+![ModelSpace](/img/ModelSpace.png)
+![ModelTest](/img/ModelTest.png)
 
-## Key Features
-- **Data ingest & management**: Camera image collection via MQTT, uploading data to project space for unified management.
-- **Annotation workbench**: Shortcut-driven labeling, class management, dataset import/export (COCO / YOLO / project annotation ZIP).
-- **Training & testing**: YOLO-based training and model testing. Currently supports YOLOv8n, with more models to be added in the future.
-- **Quantization & deployment**: One-click NE301 model package export. Deploy your model on devices without coding.
+## Core Features
+
+### AI Model Project Management
+- **Data Collection & Management**: Supports automatic image data collection from cameras via MQTT and upload to project space for unified data management. Supports multi-device access with real-time viewing and filtering of collection progress.
+- **Annotation Workbench**: Provides shortcut-driven efficient annotation workflows, supporting multiple annotation types such as object detection and classification. Built-in class management for flexible label addition and deletion, supports dataset import and export in COCO / YOLO / project annotation ZIP formats.
+- **Training & Testing**: Built-in YOLO architecture-based model training and testing tools. Supports setting training parameters, custom dataset allocation, real-time viewing of training logs and result reports. Training and quantization features depend on the [ultralytics/ultralytics](https://github.com/ultralytics/ultralytics) project. Currently supports yolov8n, with more models and algorithm support to be added in the future.
+- **Quantization & Deployment**: Integrated NE301 quantization and model packaging tools, enabling one-click export of model file packages suitable for NE301 devices, deployable to edge AI devices without coding. Supports automatic compatibility checking and inference speed evaluation.
+
+### Model Space Management (New Feature)
+- **Model Management**: Each trained and quantized model is automatically saved as an independent version and can be rolled back or exported at any time for traceability and comparison.
+- **Model Testing**: Supports result testing of different model versions to help select the best model for deployment to devices.
+- **External Model Quantization Support**: Supports importing existing YOLO models and quantizing them into NE301 model resources without retraining, accelerating your edge deployment.
 
 ## Requirements
 - Docker & docker-compose (required). Please refer to [Docker official installation guide](https://docs.docker.com/get-docker/) and [docker-compose installation documentation](https://docs.docker.com/compose/install/) for installation.
@@ -22,9 +39,11 @@ AI Tool Stack is an end-to-end edge-AI toolkit for [NeoEyes NE301](https://githu
   docker pull camthink/ne301-dev:latest
   ```
 
-> **Related Project**: [NE301 - STM32N6 AI Vision Camera](https://github.com/camthink-ai/ne301) - The target device firmware and development repository.
+> **Related Project**: [NE301 - STM32N6 AI Vision Camera](https://github.com/camthink-ai/ne301) - Device firmware and development repository.
+
 
 ## Quick Start (Docker)
+
 Clone the repository:
 ```bash
 git clone https://github.com/camthink-ai/AIToolStack.git
@@ -48,74 +67,29 @@ cd backend  && pip install -r requirements.txt && uvicorn main:app --reload
 API routes live in `backend/api/routes.py`  
 Frontend config is in `frontend/src/config.ts`.
 
-## AI Model Project Workflow
-The recommended workflow for AI Model Project is as follows:
-
-1. **Create a project**  
-   Create a new AI project on the page for subsequent data collection, management, and training.
-
-2. **Configure NE301 MQTT (server + topic)**  
-   Configure the MQTT broker address and topic for NE301 camera data push, ensuring data can be uploaded to the specified project. See MQTT information on the project page for details.
-
-3. **Capture images or upload manually**  
-   - Recommended: Use NE301 to capture on-site images (automatically uploaded via MQTT).  
-   - Alternatively: Manually upload local images to the current project to supplement data.
-
-4. **Data annotation and class management**  
-   Perform data annotation in the annotation workbench. Create and edit classes, with support for rectangle/polygon and other annotation tools.
-
-5. **Model training**  
-   Select annotated data and click the training button. Supports parameter adjustment such as epoch, batch size, model type, etc.
-
-6. **Quantize model / One-click export NE301 package**  
-   After training is complete, quantize and export the NE301-compatible model package with one click.
-
-7. **Deploy to NE301 device**  
-   Deploy the model package to NE301 through the device management page or manual operation. For detailed guide, see [NE301 Quick Start](https://wiki.camthink.ai/docs/neoeyes-ne301-series/quick-start).
-   
-**Example topology:**
-```
-[NE301 Camera] <───> [Router/LAN] <───> [Computer/Server running AI Tool Stack]
-```
-
 ## Roadmap
-- Model hub: standalone quantization and downloadable model library
-- Device management: NE101/NE301 connection, data debugging, OTA
+- ✅ **Model Hub**: Import and quantization support for existing models, with simple model management
+- 🛠️ **Device Management**: NE301 data debugging, AI model remote updates, collected data upload to project library with detection result annotation to enrich datasets
 
-## Ports & Environment
-- Default ports (docker-compose):  
+## Ports & Environment Variables
+- **Default ports (docker-compose)**:  
   - Backend / API: `8000`  
   - Frontend (react-scripts in container): `3000` (proxied/mapped, check logs)  
-- Key environment variables (examples):  
-  - `API_BASE_URL`: frontend API base (e.g., `http://localhost:8000`)  
+- **Key environment variables (examples)**:  
+  - `API_BASE_URL`: Frontend API base address (e.g., `http://localhost:8000`)  
   - `MQTT_BROKER_HOST`: MQTT broker host/IP (e.g., `localhost` or broker service name in compose)  
   - `MQTT_BROKER`, `MQTT_TOPIC`: NE301 MQTT settings
-  - `DATASETS_ROOT`: backend dataset storage path  
-  - Add more as needed in `.env` or compose env overrides.
-
-## Dataset Formats (import/export)
-- COCO: single JSON with `images/annotations/categories`.  
-- YOLO: ZIP with `images/` + `labels/` (.txt).  
-- Project ZIP: `images/` + `annotations/*.json` + optional `classes.json` (id/name/color).  
-- Exports: YOLO dataset ZIP; full annotation ZIP (images + annotations + classes.json).
+  - `DATASETS_ROOT`: Backend dataset storage path  
+  - More variables can be configured in `.env` or compose environment variable overrides.
 
 ## Troubleshooting
-- Build fails (frontend) missing assets: ensure all referenced CSS/TSX exist (`DatasetImportModal.css` etc.).  
-- Port conflicts: adjust mapped ports in `docker-compose.yml`.  
-- Slow annotation layer on fast navigation: caching added; still slow → reduce image size (JPEG/WebP) or check network/CPU.
+- **Build fails (frontend) missing assets**: Ensure all referenced CSS/TSX files exist (`DatasetImportModal.css` etc.).  
+- **Port conflicts**: Adjust mapped ports in `docker-compose.yml`.  
+- **Slow annotation layer on fast navigation**: Caching has been added; still slow → reduce image size (JPEG/WebP) or check network/CPU.
 
 ## Contributing
 - Issues & PRs welcome.  
-- Style: follow repo defaults (eslint/prettier for frontend, black/flake8 if configured for backend).  
-- Branching: fork & PR or feature branches; please keep changes scoped and include repro steps for bug fixes.
 
 ## License
-- Add your license of choice (e.g., MIT/Apache-2.0). Add `LICENSE` file and reference it here.
-
-
-
-
-
-
-
+- Please add your license of choice (e.g., MIT/Apache-2.0). Add `LICENSE` file and reference it here.
 

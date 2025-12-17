@@ -225,7 +225,7 @@ def generate_ne301_json_config(
             "description": f"YOLOv8 model for object detection (Int8 quantized, {input_size}x{input_size})",
             "type": "OBJECT_DETECTION",
             "framework": "TFLITE",
-            "author": "AI Tool Stack"
+            "author": "CamThink AI Tool Stack"
         },
         "input_spec": {
             "width": input_size,

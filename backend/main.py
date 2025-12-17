@@ -15,7 +15,7 @@ from backend.services.websocket_manager import websocket_manager
 
 # Create FastAPI application
 app = FastAPI(
-    title="AI Tool Stack API",
+    title="CamThink AI Tool Stack API",
     description="Provide various AI toolsets to accelerate AI edge deployment",
     version="1.0.0"
 )
@@ -102,7 +102,7 @@ if FRONTEND_BUILD_DIR.exists():
 @app.on_event("startup")
 async def startup_event():
     """Initialize on application startup"""
-    print("[Server] Starting AI Tool Stack backend...")
+    print("[Server] Starting CamThink AI Tool Stack backend...")
     
     # Initialize database
     init_db()
@@ -162,7 +162,7 @@ async def shutdown_event():
 def api_info():
     """API information"""
     return {
-        "name": "AI Tool Stack API",
+        "name": "CamThink AI Tool Stack API",
         "version": "1.0.0",
         "status": "running"
     }

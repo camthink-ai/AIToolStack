@@ -4,6 +4,8 @@ import { ToolType, Annotation, ImageInfo, Class } from './AnnotationWorkbench';
 import { API_BASE_URL } from '../config';
 import { IoWarning } from 'react-icons/io5';
 import './AnnotationCanvas.css';
+import { Alert } from '../ui/Alert';
+import { useAlert } from '../hooks/useAlert';
 
 // Icon component wrapper to resolve TypeScript type issues
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -43,6 +45,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
   projectId
 }) => {
   const { t } = useTranslation();
+  const { alertState, showWarning, closeAlert } = useAlert();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -839,7 +842,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       }
     } else if (tool === 'bbox') {
       if (!effectiveClassId) {
-        alert('Please select a class first');
+        showWarning(t('annotation.selectClassFirst', '请先选择类别'));
         return;
       }
       if (!bboxStart) {
@@ -848,7 +851,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       }
     } else if (tool === 'polygon') {
       if (!effectiveClassId) {
-        alert('Please select a class first');
+        showWarning(t('annotation.selectClassFirst', '请先选择类别'));
         return;
       }
       if (!isDrawingPolygon) {
@@ -873,7 +876,7 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       }
     } else if (tool === 'keypoint') {
       if (!effectiveClassId) {
-        alert('Please select a class first');
+        showWarning(t('annotation.selectClassFirst', '请先选择类别'));
         return;
       }
       // Add keypoint
@@ -1350,6 +1353,17 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
         onDoubleClick={handleDoubleClick}
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()} // Disable right-click context menu
+      />
+      
+      {/* Alert Dialog */}
+      <Alert
+        open={alertState.open}
+        onOpenChange={closeAlert}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        confirmText={alertState.confirmText || t('common.confirm', '确定')}
+        onConfirm={alertState.onConfirm}
       />
     </div>
   );

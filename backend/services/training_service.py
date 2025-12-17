@@ -634,7 +634,7 @@ class TrainingService:
                 results = model.train(**train_args)
                 # Mark if stop was requested after training exits
                 stop_requested = stop_event.is_set() if stop_event else False
-
+                
             # Training completed (normal or stopped)
             training_success = True
             results_obj = results  # Save results object for later use
@@ -734,7 +734,7 @@ class TrainingService:
                                     else:
                                         record['status'] = 'failed'
                                         record['error'] = error_msg if 'error_msg' in locals() else "Training failed unexpectedly"
-                                    record['end_time'] = datetime.now().isoformat()
+                                        record['end_time'] = datetime.now().isoformat()
                                     record_for_db = record
                                 break
                     

@@ -1,5 +1,5 @@
 """API route definitions"""
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Query, Form, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -14,8 +14,9 @@ import sys
 import os
 import subprocess
 import yaml
+import re
 
-from backend.models.database import get_db, Project, Image, Class, Annotation
+from backend.models.database import get_db, Project, Image, Class, Annotation, TrainingRecord, ModelRegistry
 from backend.services.websocket_manager import websocket_manager
 from backend.services.mqtt_service import mqtt_service
 from backend.services.training_service import training_service
@@ -32,6 +33,77 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _slugify(text: str, max_len: int = 40) -> str:
+    """Create filesystem-friendly slug."""
+    if not text:
+        return "unnamed"
+    text = text.strip()
+    # Replace whitespace with underscores
+    text = re.sub(r"\s+", "_", text)
+    # Remove invalid chars
+    text = re.sub(r"[^0-9a-zA-Z_\-]+", "", text)
+    if not text:
+        text = "unnamed"
+    return text[:max_len]
+
+
+def _get_project_class_names(project_id: str) -> list[str]:
+    """
+    Load class names from project's data.yaml if available.
+    Used for building human-friendly model filenames.
+    """
+    data_yaml = settings.DATASETS_ROOT / project_id / "yolo_export" / "data.yaml"
+    names: list[str] = []
+    if data_yaml.exists():
+        try:
+            with open(data_yaml, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            raw_names = data.get("names")
+            if isinstance(raw_names, dict):
+                # {0: 'person', 1: 'car', ...}
+                names = [v for _, v in sorted(raw_names.items(), key=lambda kv: int(kv[0]))]
+            elif isinstance(raw_names, list):
+                names = [str(n) for n in raw_names]
+        except Exception:
+            names = []
+    return names
+
+
+def _build_model_basename(
+    project: Project,
+    training_record: Optional[TrainingRecord],
+    project_id: str,
+    training_id: Optional[str],
+    class_names: list[str],
+) -> str:
+    """
+    Build a common base name for model files:
+    <project>__<classes>__<training_id>__<timestamp>
+    """
+    project_slug = _slugify(project.name or project_id)
+
+    if class_names:
+        primary = class_names[:3]
+        classes_part = "-".join(_slugify(c, max_len=16) for c in primary)
+    else:
+        classes_part = "no-class"
+
+    # Prefer end_time, then start_time, then now
+    dt: Optional[datetime] = None
+    if training_record:
+        if training_record.end_time:
+            dt = training_record.end_time
+        elif training_record.start_time:
+            dt = training_record.start_time
+    if dt is None:
+        dt = datetime.utcnow()
+    ts = dt.strftime("%Y%m%d-%H%M%S")
+
+    tid = training_id or "no-id"
+
+    return f"{project_slug}__{classes_part}__{tid}__{ts}"
+
+
 # ========== Pydantic Models ==========
 
 class ProjectCreate(BaseModel):
@@ -45,9 +117,6 @@ class ProjectResponse(BaseModel):
     description: str = ""
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
-    
-    class Config:
-        from_attributes = True
 
     @classmethod
     def from_orm(cls, obj: Project):
@@ -59,6 +128,39 @@ class ProjectResponse(BaseModel):
             created_at=obj.created_at.isoformat() if obj.created_at else None,
             updated_at=obj.updated_at.isoformat() if obj.updated_at else None
         )
+
+
+class ModelInfo(BaseModel):
+    """Global model info for model space"""
+    # Basic identity
+    model_id: Optional[int] = None  # For ModelRegistry
+    training_id: Optional[str] = None
+    project_id: Optional[str] = None
+    project_name: Optional[str] = None
+    name: Optional[str] = None  # Model name (user-defined for imported models)
+
+    # Source & type
+    source: str  # training / import / other
+    model_type: Optional[str] = None
+    format: Optional[str] = None
+
+    # Training-related (for training-produced models)
+    status: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    model_size: Optional[str] = None
+    epochs: Optional[int] = None
+    imgsz: Optional[int] = None
+    batch: Optional[int] = None
+    device: Optional[str] = None
+    metrics: Optional[dict] = None
+    error: Optional[str] = None
+    model_path: Optional[str] = None
+    log_count: int = 0
+
+    # Class / label information
+    num_classes: Optional[int] = None
+    class_names: Optional[List[str]] = None
 
 
 class TrainingRequest(BaseModel):
@@ -94,9 +196,6 @@ class TrainingRequest(BaseModel):
     fliplr: Optional[float] = None  # Horizontal flip probability
     mosaic: Optional[float] = None  # Mosaic augmentation probability
     mixup: Optional[float] = None  # Mixup augmentation probability
-    
-    class Config:
-        protected_namespaces = ()  # Fix model_size field warning
 
 
 class ClassCreate(BaseModel):
@@ -148,6 +247,288 @@ def list_projects(db: Session = Depends(get_db)):
     """List all projects"""
     projects = db.query(Project).order_by(Project.created_at.desc()).all()
     return [ProjectResponse.from_orm(p) for p in projects]
+
+
+@router.get("/models", response_model=List[ModelInfo])
+def list_models(db: Session = Depends(get_db)):
+    """
+    List all models across projects (for model space).
+    Includes:
+    - training-produced models (from TrainingRecord)
+    - externally imported models (from ModelRegistry)
+    """
+
+    results: List[ModelInfo] = []
+
+    def infer_model_type(
+        model_size: Optional[str] = None,
+        path: Optional[str] = None,
+        training_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Derive a friendly model type name.
+        
+        Target display (frontend will append format):
+        - yolov8n
+        - yolov8s
+        - yolov11m
+        - ne301
+        
+        Strategy:
+        1. Try to read from training directory's args.yaml (Ultralytics saves model info there)
+        2. Parse from model path if it contains architecture info
+        3. Default to yolov8 if we have model_size but no architecture
+        """
+        arch: Optional[str] = None
+
+        # First, try to read from training directory's args.yaml (most reliable)
+        if training_id and project_id and path:
+            try:
+                model_path_obj = Path(path)
+                # args.yaml is typically in the same directory as weights/ or in the training root
+                possible_args_paths = [
+                    model_path_obj.parent.parent / "args.yaml",  # weights/best.pt -> train_xxx/args.yaml
+                    model_path_obj.parent / "args.yaml",  # direct path
+                    settings.DATASETS_ROOT / project_id / f"train_{training_id}" / "args.yaml",
+                    settings.DATASETS_ROOT / project_id / f"train_{project_id}" / "args.yaml",
+                ]
+                
+                for args_path in possible_args_paths:
+                    if args_path.exists():
+                        try:
+                            with open(args_path, "r", encoding="utf-8") as f:
+                                args_data = yaml.safe_load(f) or {}
+                            # Ultralytics args.yaml contains 'model' field like 'yolov8n.pt' or 'yolov8n'
+                            model_str = args_data.get("model", "")
+                            if model_str:
+                                # Extract architecture (yolov8, yolov11, etc.) and size (n, s, m, l, x)
+                                model_str_lower = model_str.lower().replace(".pt", "").replace(".yaml", "")
+                                # Match patterns like yolov8n, yolov11s, etc.
+                                import re
+                                match = re.match(r"(yolov\d+)([nsmlx])", model_str_lower)
+                                if match:
+                                    arch = match.group(1)  # yolov8, yolov11, etc.
+                                    detected_size = match.group(2)  # n, s, m, l, x
+                                    # Use detected size if model_size not provided
+                                    if not model_size:
+                                        model_size = detected_size
+                                    break
+                                # Fallback: try to extract just architecture
+                                if "yolov11" in model_str_lower:
+                                    arch = "yolov11"
+                                    break
+                                elif "yolov8" in model_str_lower:
+                                    arch = "yolov8"
+                                    break
+                        except Exception:
+                            continue
+            except Exception:
+                pass
+
+        # Fallback: try to infer from path
+        if not arch and path:
+            name = Path(path).name.lower()
+            if "yolov11" in name:
+                arch = "yolov11"
+            elif "yolov8" in name:
+                arch = "yolov8"
+            elif "yolo" in name:
+                arch = "yolo"
+            # Don't use generic file names like "best" as architecture
+
+        # Default to yolov8 if we have model_size but no architecture (most common case)
+        if not arch and model_size:
+            arch = "yolov8"
+
+        # If we know YOLO family and also have size (n/s/m/l/x), merge them (yolov8n, yolov11s, etc.)
+        if arch in ("yolov8", "yolov11", "yolo") and model_size:
+            return f"{arch}{model_size}"
+
+        # If we don't know architecture but have size, keep size as a very last fallback
+        if model_size and not arch:
+            return model_size
+
+        # Otherwise use detected architecture or a generic default
+        return arch or "yolo"
+
+    def infer_format(path: Optional[str], default: Optional[str] = None) -> Optional[str]:
+        """Infer file format from path suffix."""
+        if path:
+            suffix = Path(path).suffix.lower().lstrip(".")
+            if suffix:
+                return suffix
+        return default
+
+    # ---------- Training-produced models ----------
+    training_records = (
+        db.query(TrainingRecord, Project)
+        .join(Project, TrainingRecord.project_id == Project.id)
+        .order_by(TrainingRecord.start_time.desc())
+        .all()
+    )
+
+    # Cache per-project class names from dataset data.yaml if available
+    project_classes_cache: dict[str, List[str]] = {}
+
+    def get_project_classes(project_id: str) -> List[str]:
+        if project_id in project_classes_cache:
+            return project_classes_cache[project_id]
+        names: List[str] = []
+        data_yaml = settings.DATASETS_ROOT / project_id / "yolo_export" / "data.yaml"
+        if data_yaml.exists():
+            try:
+                with open(data_yaml, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                # Ultralytics style: names can be dict or list
+                raw_names = data.get("names")
+                if isinstance(raw_names, dict):
+                    # {0: 'person', 1: 'car', ...}
+                    names = [v for _, v in sorted(raw_names.items(), key=lambda kv: int(kv[0]))]
+                elif isinstance(raw_names, list):
+                    names = [str(n) for n in raw_names]
+            except Exception:
+                names = []
+        project_classes_cache[project_id] = names
+        return names
+
+    for rec, proj in training_records:
+        # Parse metrics JSON safely
+        metrics: Optional[dict] = None
+        if rec.metrics:
+            try:
+                metrics = json.loads(rec.metrics)
+            except json.JSONDecodeError:
+                metrics = None
+
+        class_names = get_project_classes(rec.project_id)
+
+        results.append(
+            ModelInfo(
+                model_id=None,
+                training_id=rec.training_id,
+                project_id=rec.project_id,
+                project_name=proj.name,
+                source="training",
+                model_type=infer_model_type(
+                    rec.model_size,
+                    rec.model_path,
+                    rec.training_id,
+                    rec.project_id,
+                ),
+                format=infer_format(rec.model_path, "pt"),
+                status=rec.status or "unknown",
+                start_time=rec.start_time.isoformat() if rec.start_time else None,
+                end_time=rec.end_time.isoformat() if rec.end_time else None,
+                model_size=rec.model_size,
+                epochs=rec.epochs,
+                imgsz=rec.imgsz,
+                batch=rec.batch,
+                device=rec.device,
+                metrics=metrics,
+                error=rec.error,
+                model_path=rec.model_path,
+                log_count=rec.log_count or 0,
+                num_classes=len(class_names) or None,
+                class_names=class_names or None,
+            )
+        )
+
+    # ---------- Externally imported models ----------
+    registry_rows = (
+        db.query(ModelRegistry, Project)
+        .outerjoin(Project, ModelRegistry.project_id == Project.id)
+        .order_by(ModelRegistry.created_at.desc())
+        .all()
+    )
+
+    for reg, proj in registry_rows:
+        # Skip NE301 TFLite models (only show NE301 bin packages)
+        if (reg.format or "").lower() == "tflite" and (reg.model_type or "").lower() == "ne301":
+            continue
+
+        # Parse class names from registry (if stored)
+        class_names: Optional[List[str]] = None
+        if reg.class_names:
+            try:
+                raw = json.loads(reg.class_names)
+                if isinstance(raw, list):
+                    class_names = [str(x) for x in raw]
+            except json.JSONDecodeError:
+                class_names = None
+
+        # Try to reuse training metrics for quantized / registry models
+        metrics: Optional[dict] = None
+        if reg.training_id and reg.project_id:
+            tr = (
+                db.query(TrainingRecord)
+                .filter(
+                    TrainingRecord.project_id == reg.project_id,
+                    TrainingRecord.training_id == reg.training_id,
+                )
+                .first()
+            )
+            if tr and tr.metrics:
+                try:
+                    metrics = json.loads(tr.metrics)
+                except json.JSONDecodeError:
+                    metrics = None
+
+        # Determine model_type for registry models
+        registry_model_type: Optional[str] = None
+        # For externally imported models, always use the stored model_type (user-defined)
+        if reg.source == "import" and reg.model_type:
+            registry_model_type = reg.model_type
+        elif reg.model_type and (reg.model_type or "").lower() != "yolo":
+            # Use explicit registry model_type if it's not generic "yolo"
+            registry_model_type = reg.model_type
+        elif 'tr' in locals() and tr:
+            # Try to infer from linked training record
+            registry_model_type = infer_model_type(
+                tr.model_size,
+                tr.model_path,
+                tr.training_id,
+                tr.project_id,
+            )
+        else:
+            # Fallback: infer from registry model_path
+            registry_model_type = infer_model_type(
+                None,
+                reg.model_path,
+                reg.training_id,
+                reg.project_id,
+            )
+
+        results.append(
+            ModelInfo(
+                model_id=reg.id,
+                training_id=reg.training_id,
+                project_id=reg.project_id,
+                project_name=proj.name if proj else None,
+                name=reg.name,  # Include user-defined model name
+                source=reg.source or "import",
+                model_type=registry_model_type,
+                format=reg.format or infer_format(reg.model_path),
+                # Registry models默认视为“已完成/可用”
+                status="completed",
+                start_time=reg.created_at.isoformat() if reg.created_at else None,
+                # Use created_at as end_time for registry models (model creation/storage time)
+                end_time=reg.created_at.isoformat() if reg.created_at else None,
+                model_size=None,
+                epochs=None,
+                imgsz=reg.input_width,  # simplified: use width as imgsz
+                batch=None,
+                device=None,
+                metrics=metrics,
+                error=None,
+                model_path=reg.model_path,
+                log_count=0,
+                num_classes=reg.num_classes,
+                class_names=class_names,
+            )
+        )
+
+    return results
 
 
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
@@ -1277,26 +1658,39 @@ def get_training_logs(project_id: str, training_id: str, db: Session = Depends(g
 
 @router.get("/projects/{project_id}/train/{training_id}/export")
 def export_trained_model(project_id: str, training_id: str, db: Session = Depends(get_db)):
-    """Export trained model"""
-    
+    """Export trained PT model with friendly filename."""
+
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
-    record = training_service.get_training_record(project_id, training_id)
-    if not record:
+
+    record_dict = training_service.get_training_record(project_id, training_id)
+    if not record_dict:
         raise HTTPException(status_code=404, detail="Training record not found")
-    
-    if record.get('status') != 'completed':
+
+    if record_dict.get('status') != 'completed':
         raise HTTPException(status_code=400, detail="Training is not completed")
-    
-    model_path = record.get('model_path')
+
+    model_path = record_dict.get('model_path')
     if not model_path or not Path(model_path).exists():
         raise HTTPException(status_code=404, detail="Model file not found")
-    
+
+    # Load DB training record for timestamp
+    db_record: Optional[TrainingRecord] = (
+        db.query(TrainingRecord)
+        .filter(
+            TrainingRecord.project_id == project_id,
+            TrainingRecord.training_id == training_id,
+        )
+        .first()
+    )
+    class_names = _get_project_class_names(project_id)
+    base_name = _build_model_basename(project, db_record, project_id, training_id, class_names)
+    filename = f"{base_name}__pt.pt"
+
     return FileResponse(
         path=model_path,
-        filename=Path(model_path).name,
+        filename=filename,
         media_type='application/octet-stream'
     )
 
@@ -1377,10 +1771,15 @@ def export_tflite_model(
             quant_workdir.mkdir(parents=True, exist_ok=True)
             config_path = quant_workdir / "user_config_quant.yaml"
 
+            # Generate unique identifier for this quantization (timestamp + training_id)
+            # This ensures each quantization creates unique files
+            quant_timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+            unique_uc = f"{project_id}_{training_id}_{quant_timestamp}"
+
             cfg = {
                 "model": {
                     "name": f"{Path(model_path).stem}_ne301",
-                    "uc": str(project_id),
+                    "uc": unique_uc,  # Use unique identifier to avoid file overwrites
                     "model_path": str(saved_model_dir.resolve()),
                     "input_shape": [imgsz, imgsz, 3],
                 },
@@ -1693,6 +2092,89 @@ def export_tflite_model(
         else:
             logger.error(f"[Export] ✗ Original TFLite file does not exist: {export_path}")
         
+        # Save quantized models to ModelRegistry
+        try:
+            # Read class names from data.yaml
+            with open(data_yaml, "r", encoding="utf-8") as f:
+                data_info = yaml.safe_load(f)
+            
+            class_names = data_info.get("names", [])
+            if isinstance(class_names, dict):
+                max_idx = max(class_names.keys())
+                names_list = [""] * (max_idx + 1)
+                for idx, name in class_names.items():
+                    names_list[int(idx)] = name
+                class_names = names_list
+            elif not isinstance(class_names, list):
+                class_names = []
+            
+            num_classes = len(class_names) if class_names else 0
+            class_names_json = json.dumps(class_names) if class_names else None
+            
+            # Save original TFLite model
+            if export_path_obj.exists():
+                db_model = ModelRegistry(
+                    name=f"{Path(model_path).stem}_tflite_{imgsz}",
+                    source="quantization",
+                    project_id=project_id,
+                    training_id=training_id,
+                    model_type="yolo",
+                    format="tflite",
+                    model_path=str(export_path),
+                    input_width=imgsz,
+                    input_height=imgsz,
+                    num_classes=num_classes,
+                    class_names=class_names_json
+                )
+                db.add(db_model)
+                logger.info(f"[ModelRegistry] Saved original TFLite model: {export_path}")
+            
+            # Save NE301 quantized TFLite model
+            if ne301 and ne301_path and Path(ne301_path).exists():
+                # Use timestamp in name to ensure uniqueness for multiple quantizations
+                quant_timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+                db_model_ne301 = ModelRegistry(
+                    name=f"{Path(model_path).stem}_ne301_tflite_{imgsz}_{quant_timestamp}",
+                    source="quantization",
+                    project_id=project_id,
+                    training_id=training_id,
+                    model_type="ne301",
+                    format="tflite",
+                    model_path=ne301_path,
+                    input_width=imgsz,
+                    input_height=imgsz,
+                    num_classes=num_classes,
+                    class_names=class_names_json
+                )
+                db.add(db_model_ne301)
+                logger.info(f"[ModelRegistry] Saved NE301 TFLite model: {ne301_path}")
+
+            # Save NE301 compiled bin package (if available)
+            if ne301 and ne301_model_bin_path and Path(ne301_model_bin_path).exists():
+                # Use the same timestamp for consistency
+                db_model_ne301_bin = ModelRegistry(
+                    name=f"{Path(model_path).stem}_ne301_bin_{imgsz}_{quant_timestamp}",
+                    source="quantization",
+                    project_id=project_id,
+                    training_id=training_id,
+                    model_type="ne301",
+                    format="bin",
+                    model_path=ne301_model_bin_path,
+                    input_width=imgsz,
+                    input_height=imgsz,
+                    num_classes=num_classes,
+                    class_names=class_names_json
+                )
+                db.add(db_model_ne301_bin)
+                logger.info(f"[ModelRegistry] Saved NE301 bin package: {ne301_model_bin_path}")
+            
+            db.commit()
+            
+        except Exception as e:
+            logger.error(f"[ModelRegistry] Failed to save quantized models: {e}", exc_info=True)
+            db.rollback()
+            # Don't fail the entire request if database save fails
+        
         return result
     except ImportError as e:
         raise HTTPException(status_code=500, detail=f"Ultralytics or TensorFlow not installed: {str(e)}")
@@ -1768,6 +2250,18 @@ def download_tflite_export(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Load DB training record for timestamp and imgsz
+    db_record: Optional[TrainingRecord] = (
+        db.query(TrainingRecord)
+        .filter(
+            TrainingRecord.project_id == project_id,
+            TrainingRecord.training_id == training_id,
+        )
+        .first()
+    )
+    class_names = _get_project_class_names(project_id)
+    base_name = _build_model_basename(project, db_record, project_id, training_id, class_names)
     
     # Build possible file paths
     # Note: Training directory may be train_{training_id} or train_{project_id} (if training_id contains timestamp)
@@ -1819,7 +2313,7 @@ def download_tflite_export(
         if not tflite_files:
             raise HTTPException(status_code=404, detail=f"TFLite file not found in {weights_dir}")
         file_path = max(tflite_files, key=lambda p: p.stat().st_mtime)
-        filename = file_path.name
+        filename = f"{base_name}__tflite.tflite"
         logger.info(f"[Download] Selected file: {file_path}")
     elif file_type == "ne301_tflite":
         # NE301 quantized TFLite file
@@ -1833,7 +2327,7 @@ def download_tflite_export(
         if not tflite_files:
             raise HTTPException(status_code=404, detail=f"NE301 TFLite file not found in {ne301_dir}")
         file_path = max(tflite_files, key=lambda p: p.stat().st_mtime)
-        filename = file_path.name
+        filename = f"{base_name}__ne301.tflite"
         logger.info(f"[Download] Selected file: {file_path}")
     elif file_type == "ne301_json":
         # NE301 JSON configuration file
@@ -1847,7 +2341,7 @@ def download_tflite_export(
         if not json_files:
             raise HTTPException(status_code=404, detail=f"NE301 JSON file not found in {ne301_dir}")
         file_path = max(json_files, key=lambda p: p.stat().st_mtime)
-        filename = file_path.name
+        filename = f"{base_name}__ne301.json"
         logger.info(f"[Download] Selected file: {file_path}")
     elif file_type == "ne301_model_bin":
         # NE301 compiled device update package (prefer finding packaged _pkg.bin files)
@@ -1892,7 +2386,7 @@ def download_tflite_export(
             raise HTTPException(status_code=404, detail=f"NE301 model package not found in {build_dir}")
         
         file_path = model_bin_path
-        filename = model_bin_path.name
+        filename = f"{base_name}__ne301.bin"
     else:
         raise HTTPException(status_code=400, detail=f"Invalid file_type: {file_type}. Must be one of: tflite, ne301_tflite, ne301_json, ne301_model_bin")
     
@@ -2056,6 +2550,1440 @@ def clear_training(project_id: str, training_id: Optional[str] = Query(None), db
     
     training_service.clear_training(project_id, training_id)
     return {"message": "Training record cleared"}
+
+
+# ========== Model Registry Management ==========
+
+@router.post("/models/upload")
+async def upload_model(
+    file: UploadFile = File(...),
+    model_name: str = Form(..., description="Model name"),
+    model_type: str = Form("yolov8n", description="Model type (e.g., yolov8n)"),
+    input_size: int = Form(640, ge=32, le=2048, description="Input image size"),
+    num_classes: int = Form(80, ge=1, description="Number of classes"),
+    class_names: Optional[str] = Form(None, description="JSON array of class names"),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a pre-trained .pt model file to model space.
+    The model will be stored in ModelRegistry as a standalone model (not associated with any project).
+    """
+    # Validate file extension
+    if not file.filename or not file.filename.lower().endswith('.pt'):
+        raise HTTPException(status_code=400, detail="Only .pt model files are supported")
+    
+    # Parse class names
+    parsed_class_names: List[str] = []
+    if class_names:
+        try:
+            raw = json.loads(class_names)
+            if isinstance(raw, list):
+                parsed_class_names = [str(x) for x in raw]
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid class_names JSON format")
+    
+    # Standalone models: store in standalone_models directory (will create subdirectory after getting model_id)
+    upload_dir = settings.DATASETS_ROOT / "standalone_models"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    # Use temporary filename first, will move to model_id subdirectory after creation
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    safe_name = _slugify(model_name, max_len=50)
+    filename = f"{safe_name}_{timestamp}.pt"
+    file_path = upload_dir / filename
+    source_type = "standalone"
+    
+    # Save uploaded file (temporary location for standalone models)
+    try:
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+    except Exception as e:
+        logger.error(f"Failed to save uploaded model: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to save uploaded model: {str(e)}")
+    
+    # Use provided model_type or try to infer from file
+    final_model_type = model_type
+    # Only infer if model_type is not provided or is empty
+    if not final_model_type:
+        # Try to infer model type from file (basic check)
+        try:
+            from ultralytics import YOLO
+            model = YOLO(str(file_path))
+            # Try to get model info
+            model_info = model.info(verbose=False)
+            # Infer from model name or architecture
+            if hasattr(model, 'model') and hasattr(model.model, 'yaml'):
+                yaml_path = model.model.yaml
+                if yaml_path and Path(yaml_path).exists():
+                    with open(yaml_path, 'r') as f:
+                        yaml_data = yaml.safe_load(f)
+                        arch = yaml_data.get('yaml_file', '').lower()
+                        if 'yolov8' in arch:
+                            final_model_type = 'yolov8n'  # Default to yolov8n if yolov8 detected
+                        elif 'yolov11' in arch:
+                            final_model_type = 'yolov11n'  # Default to yolov11n if yolov11 detected
+        except Exception as e:
+            logger.warning(f"Could not infer model type from file: {e}")
+            final_model_type = 'yolov8n'  # Default fallback
+    # If user provided model_type, use it directly (don't override)
+    
+    # Store in ModelRegistry (use temporary path for standalone models)
+    model_reg = ModelRegistry(
+        name=model_name,
+        source=source_type,
+        project_id=None,  # Standalone models are not associated with any project
+        training_id=None,
+        model_type=final_model_type,
+        format="pt",
+        model_path=str(file_path.resolve()),
+        input_width=input_size,
+        input_height=input_size,
+        num_classes=num_classes,
+        class_names=json.dumps(parsed_class_names) if parsed_class_names else None,
+    )
+    
+    db.add(model_reg)
+    db.commit()
+    db.refresh(model_reg)
+    
+    # Move file to model_id subdirectory for standalone models
+    model_dir = upload_dir / str(model_reg.id)
+    model_dir.mkdir(parents=True, exist_ok=True)
+    final_file_path = model_dir / filename
+    try:
+        shutil.move(str(file_path), str(final_file_path))
+        # Update model_path in database
+        model_reg.model_path = str(final_file_path.resolve())
+        db.commit()
+        file_path = final_file_path
+    except Exception as e:
+        logger.error(f"Failed to move standalone model to subdirectory: {e}", exc_info=True)
+        # If move fails, keep using original path
+        pass
+    
+    logger.info(f"Uploaded model: {model_name} (ID: {model_reg.id}, Path: {file_path})")
+    
+    return {
+        "model_id": model_reg.id,
+        "model_name": model_name,
+        "file_path": str(file_path),
+        "message": "Model uploaded successfully"
+    }
+
+
+@router.post("/models/{model_id}/quantize/ne301")
+async def quantize_model_to_ne301(
+    model_id: int,
+    imgsz: int = Query(256, ge=256, le=640, description="Input image size for quantization"),
+    int8: bool = Query(True, description="Use int8 quantization"),
+    fraction: float = Query(0.2, ge=0.0, le=1.0, description="Calibration dataset fraction"),
+    db: Session = Depends(get_db)
+):
+    """
+    Quantize an uploaded .pt model to NE301 .bin format.
+    This endpoint:
+    1. Converts .pt to TFLite (with quantization)
+    2. Generates NE301 JSON config
+    3. Compiles to NE301 .bin package
+    4. Stores the result in ModelRegistry
+    """
+    # Get model from registry
+    model_reg = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
+    if not model_reg:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    if model_reg.format != "pt":
+        raise HTTPException(status_code=400, detail="Only .pt models can be quantized to NE301")
+    
+    model_path = Path(model_reg.model_path)
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model file not found")
+    
+    # Get class names
+    class_names: List[str] = []
+    if model_reg.class_names:
+        try:
+            raw = json.loads(model_reg.class_names)
+            if isinstance(raw, list):
+                class_names = [str(x) for x in raw]
+        except json.JSONDecodeError:
+            pass
+    
+    num_classes = model_reg.num_classes or len(class_names) or 80
+    
+    # Create temporary data.yaml for export (required by Ultralytics)
+    temp_dir = settings.DATASETS_ROOT / "temp_quant" / str(model_id)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    
+    data_yaml_path = temp_dir / "data.yaml"
+    data_yaml_content = {
+        "path": str(temp_dir),
+        "train": "images/train",
+        "val": "images/val",
+        "names": class_names if class_names else {i: f"class_{i}" for i in range(num_classes)}
+    }
+    
+    with open(data_yaml_path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(data_yaml_content, f, allow_unicode=True)
+    
+    # Create minimal calibration dataset (fake data for quantization)
+    calib_dir = temp_dir / "images" / "val"
+    calib_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate a few fake calibration images (required by quantization)
+    try:
+        import numpy as np
+        from PIL import Image
+        for i in range(10):  # Generate 10 fake images
+            fake_img = Image.fromarray(np.random.randint(0, 255, (imgsz, imgsz, 3), dtype=np.uint8))
+            fake_img.save(calib_dir / f"calib_{i:03d}.jpg")
+    except Exception as e:
+        logger.warning(f"Could not generate fake calibration images: {e}")
+    
+    try:
+        # Step 1: Export to TFLite
+        from ultralytics import YOLO
+        model = YOLO(str(model_path))
+        export_path = model.export(
+            format='tflite',
+            imgsz=imgsz,
+            int8=int8,
+            data=str(data_yaml_path),
+            fraction=fraction
+        )
+        export_path = Path(export_path)
+        
+        if not export_path.exists():
+            raise HTTPException(status_code=500, detail="TFLite export failed: output file not found")
+        
+        # Step 2: NE301 quantization (if needed, use the existing quantization script)
+        quant_dir = Path(__file__).resolve().parent.parent / "quantization"
+        script_path = quant_dir / "tflite_quant.py"
+        
+        saved_model_dir = export_path.parent
+        if not saved_model_dir.exists():
+            raise HTTPException(status_code=500, detail="SavedModel directory not found")
+        
+        quant_workdir = saved_model_dir.parent / "ne301_quant"
+        quant_workdir.mkdir(parents=True, exist_ok=True)
+        config_path = quant_workdir / "user_config_quant.yaml"
+        
+        # Generate unique identifier for this quantization (timestamp)
+        # This ensures each quantization creates unique files
+        quant_timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+        unique_uc = f"{model_id}_{quant_timestamp}"
+        
+        cfg = {
+            "model": {
+                "name": f"{model_path.stem}_ne301",
+                "uc": unique_uc,  # Use unique identifier to avoid file overwrites
+                "model_path": str(saved_model_dir.resolve()),
+                "input_shape": [imgsz, imgsz, 3],
+            },
+            "quantization": {
+                "fake": False,
+                "quantization_type": "per_channel",
+                "quantization_input_type": "uint8",
+                "quantization_output_type": "int8",
+                "calib_dataset_path": str(calib_dir.resolve()),
+                "export_path": str((quant_workdir / "quantized_models").resolve()),
+            },
+            "pre_processing": {"rescaling": {"scale": 255, "offset": 0}},
+        }
+        
+        with open(config_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(cfg, f, allow_unicode=True)
+        
+        cmd = [
+            sys.executable,
+            str(script_path),
+            "--config-name",
+            config_path.stem,
+            "--config-path",
+            str(quant_workdir),
+        ]
+        env = os.environ.copy()
+        env["HYDRA_FULL_ERROR"] = "1"
+        
+        proc = subprocess.run(
+            cmd,
+            cwd=str(quant_workdir),
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        
+        if proc.returncode != 0:
+            logger.error(f"[NE301] Quantization failed: {proc.stderr or proc.stdout}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"NE301 quantization failed: {proc.stderr or proc.stdout}"
+            )
+        
+        export_dir = Path(cfg["quantization"]["export_path"])
+        tflites = sorted(
+            export_dir.glob("*.tflite"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        
+        if not tflites:
+            raise HTTPException(
+                status_code=500,
+                detail="NE301 quantization completed but TFLite file not found"
+            )
+        
+        ne301_tflite_path = tflites[0]
+        
+        # Step 3: Generate NE301 JSON config
+        from backend.utils.ne301_export import (
+            generate_ne301_json_config,
+            copy_model_to_ne301_project,
+            build_ne301_model
+        )
+        
+        model_base_name = ne301_tflite_path.stem
+        json_config = generate_ne301_json_config(
+            tflite_path=ne301_tflite_path,
+            model_name=model_base_name,
+            input_size=imgsz,
+            num_classes=num_classes,
+            class_names=class_names,
+            output_scale=None,
+            output_zero_point=None,
+            confidence_threshold=0.25,
+            iou_threshold=0.45,
+            output_shape=None,
+        )
+        
+        json_output_dir = ne301_tflite_path.parent
+        json_file_path = json_output_dir / f"{model_base_name}.json"
+        with open(json_file_path, "w", encoding="utf-8") as f:
+            json.dump(json_config, f, indent=2, ensure_ascii=False)
+        
+        # Step 4: Copy to NE301 project and compile
+        ne301_project_path = Path(settings.NE301_PROJECT_PATH) if settings.NE301_PROJECT_PATH else Path("/workspace/ne301")
+        if not ne301_project_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail=f"NE301 project path does not exist: {ne301_project_path}"
+            )
+        
+        copy_model_to_ne301_project(
+            tflite_path=ne301_tflite_path,
+            json_config=json_config,
+            ne301_project_path=ne301_project_path,
+            model_name=model_base_name
+        )
+        
+        # Build NE301 model
+        ne301_bin_path = build_ne301_model(
+            ne301_project_path=ne301_project_path,
+            model_name=model_base_name,
+            docker_image=settings.NE301_DOCKER_IMAGE,
+            use_docker=settings.NE301_USE_DOCKER
+        )
+        
+        if not ne301_bin_path or not ne301_bin_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail="NE301 compilation failed: .bin file not generated"
+            )
+        
+        # Step 5: For standalone models, copy files to model directory
+        is_standalone = model_reg.source == "standalone" or not model_reg.project_id
+        if is_standalone:
+            # Determine standalone model directory
+            model_dir = settings.DATASETS_ROOT / "standalone_models" / str(model_id)
+            model_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Use timestamp to ensure unique filenames for each quantization
+            # Extract base name and add timestamp to avoid overwrites
+            tflite_base = ne301_tflite_path.stem  # filename without extension
+            tflite_ext = ne301_tflite_path.suffix  # .tflite
+            standalone_tflite_path = model_dir / f"{tflite_base}_{quant_timestamp}{tflite_ext}"
+            shutil.copy2(str(ne301_tflite_path), str(standalone_tflite_path))
+            ne301_tflite_path = standalone_tflite_path
+            
+            # Copy JSON file with timestamp
+            json_base = json_file_path.stem
+            json_ext = json_file_path.suffix
+            standalone_json_path = model_dir / f"{json_base}_{quant_timestamp}{json_ext}"
+            shutil.copy2(str(json_file_path), str(standalone_json_path))
+            
+            # Copy BIN file with timestamp
+            bin_base = ne301_bin_path.stem
+            bin_ext = ne301_bin_path.suffix
+            standalone_bin_path = model_dir / f"{bin_base}_{quant_timestamp}{bin_ext}"
+            shutil.copy2(str(ne301_bin_path), str(standalone_bin_path))
+            ne301_bin_path = standalone_bin_path
+        
+        # Step 6: Store NE301 TFLite and BIN in ModelRegistry
+        # Use quant_timestamp for consistent naming across files and database records
+        
+        # Store TFLite
+        tflite_reg = ModelRegistry(
+            name=f"{model_reg.name}_ne301_tflite_{quant_timestamp}",
+            source=model_reg.source,  # Inherit source from original model
+            project_id=model_reg.project_id,
+            training_id=None,
+            model_type="ne301",
+            format="tflite",
+            model_path=str(ne301_tflite_path.resolve()),
+            input_width=imgsz,
+            input_height=imgsz,
+            num_classes=num_classes,
+            class_names=model_reg.class_names,
+        )
+        db.add(tflite_reg)
+        db.flush()
+        
+        # Store BIN
+        bin_reg = ModelRegistry(
+            name=f"{model_reg.name}_ne301_bin_{quant_timestamp}",
+            source=model_reg.source,  # Inherit source from original model
+            project_id=model_reg.project_id,
+            training_id=None,
+            model_type="ne301",
+            format="bin",
+            model_path=str(ne301_bin_path.resolve()),
+            input_width=imgsz,
+            input_height=imgsz,
+            num_classes=num_classes,
+            class_names=model_reg.class_names,
+        )
+        db.add(bin_reg)
+        db.commit()
+        
+        logger.info(f"Quantized model {model_id} to NE301: TFLite ID={tflite_reg.id}, BIN ID={bin_reg.id}")
+        
+        return {
+            "model_id": model_id,
+            "ne301_tflite_id": tflite_reg.id,
+            "ne301_bin_id": bin_reg.id,
+            "ne301_tflite_path": str(ne301_tflite_path),
+            "ne301_bin_path": str(ne301_bin_path),
+            "message": "Model quantized to NE301 successfully"
+        }
+        
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Required library not installed: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"Quantization failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Quantization failed: {str(e)}"
+        )
+    finally:
+        # Cleanup temp directory (optional, can keep for debugging)
+        # shutil.rmtree(temp_dir, ignore_errors=True)
+        pass
+
+
+@router.get("/models/{model_id}/download")
+def download_model(model_id: int, db: Session = Depends(get_db)):
+    """Download model from ModelRegistry by model_id"""
+    model_reg = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
+    if not model_reg:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_path = Path(model_reg.model_path)
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model file not found")
+    
+    # Build friendly filename
+    project = db.query(Project).filter(Project.id == model_reg.project_id).first() if model_reg.project_id else None
+    class_names: List[str] = []
+    if model_reg.class_names:
+        try:
+            raw = json.loads(model_reg.class_names)
+            if isinstance(raw, list):
+                class_names = [str(x) for x in raw]
+        except json.JSONDecodeError:
+            pass
+    
+    db_record = None
+    if model_reg.training_id and model_reg.project_id:
+        db_record = (
+            db.query(TrainingRecord)
+            .filter(
+                TrainingRecord.project_id == model_reg.project_id,
+                TrainingRecord.training_id == model_reg.training_id,
+            )
+            .first()
+        )
+    
+    base_name = _build_model_basename(
+        project or Project(id=model_reg.project_id or "", name=model_reg.name or ""),
+        db_record,
+        model_reg.project_id or "",
+        model_reg.training_id,
+        class_names,
+    )
+    
+    # Determine file extension and suffix
+    fmt = (model_reg.format or "").lower()
+    if fmt == "tflite":
+        # Distinguish NE301 vs normal TFLite
+        if (model_reg.model_type or "").lower() == "ne301":
+            filename = f"{base_name}__ne301.tflite"
+        else:
+            filename = f"{base_name}__tflite.tflite"
+    elif fmt in ("bin", "ne301_bin"):
+        # NE301 compiled device package
+        filename = f"{base_name}__ne301.bin"
+    else:
+        # Default to PT
+        filename = f"{base_name}__pt.pt"
+    
+    return FileResponse(
+        path=str(model_path),
+        filename=filename,
+        media_type='application/octet-stream'
+    )
+
+
+@router.get("/models/{model_id}/related")
+def get_model_related_files(model_id: int, db: Session = Depends(get_db)):
+    """Get related files for NE301 bin package (tflite and json)"""
+    model_reg = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
+    if not model_reg:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    # Only for NE301 bin packages
+    if (model_reg.format or "").lower() != "bin" or (model_reg.model_type or "").lower() != "ne301":
+        raise HTTPException(
+            status_code=400,
+            detail="This endpoint is only for NE301 bin packages"
+        )
+    
+    # Find related tflite and json files
+    related_files = {
+        "tflite": None,
+        "json": None
+    }
+    
+    is_standalone = model_reg.source == "standalone" or not model_reg.project_id
+    
+    if is_standalone:
+        # For standalone models: find by name pattern and source
+        # BIN model name format: {name}_ne301_bin
+        # TFLite model name format: {name}_ne301_tflite
+        bin_name = model_reg.name
+        if bin_name.endswith("_ne301_bin"):
+            base_name = bin_name[:-10]  # Remove "_ne301_bin" suffix
+            expected_tflite_name = f"{base_name}_ne301_tflite"
+            
+            # Find TFLite in ModelRegistry
+            tflite_reg = (
+                db.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.name == expected_tflite_name,
+                    ModelRegistry.format == "tflite",
+                    ModelRegistry.model_type == "ne301",
+                    ModelRegistry.source == "standalone",
+                    ModelRegistry.project_id.is_(None),
+                    ModelRegistry.training_id.is_(None)
+                )
+                .first()
+            )
+            if tflite_reg and Path(tflite_reg.model_path).exists():
+                related_files["tflite"] = {
+                    "model_id": tflite_reg.id,
+                    "path": tflite_reg.model_path,
+                    "name": tflite_reg.name
+                }
+            
+            # Find JSON file in standalone model directory
+            # JSON is stored in: standalone_models/{original_pt_model_id}/*.json
+            # We need to find the original PT model ID from the BIN model name
+            # BIN model name format: {original_name}_ne301_bin
+            # Original PT model name: {original_name}
+            original_model_name = base_name  # base_name is the original model name without _ne301_bin suffix
+            
+            # Find original PT model to get its ID
+            original_pt_model = (
+                db.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.name == original_model_name,
+                    ModelRegistry.format == "pt",
+                    ModelRegistry.source == "standalone",
+                    ModelRegistry.project_id.is_(None),
+                    ModelRegistry.training_id.is_(None)
+                )
+                .first()
+            )
+            
+            # Use original PT model ID to find JSON file
+            original_model_id = original_pt_model.id if original_pt_model else model_id
+            model_dir = settings.DATASETS_ROOT / "standalone_models" / str(original_model_id)
+            if model_dir.exists():
+                json_files = list(model_dir.glob("*.json"))
+                if json_files:
+                    # Use the most recent json file
+                    json_file = max(json_files, key=lambda p: p.stat().st_mtime)
+                    related_files["json"] = {
+                        "path": str(json_file),
+                        "name": json_file.name
+                    }
+    elif model_reg.training_id and model_reg.project_id:
+        # For project-associated models: find from same training
+        # Find NE301 tflite from same training
+        tflite_reg = (
+            db.query(ModelRegistry)
+            .filter(
+                ModelRegistry.project_id == model_reg.project_id,
+                ModelRegistry.training_id == model_reg.training_id,
+                ModelRegistry.format == "tflite",
+                ModelRegistry.model_type == "ne301"
+            )
+            .first()
+        )
+        if tflite_reg and Path(tflite_reg.model_path).exists():
+            related_files["tflite"] = {
+                "model_id": tflite_reg.id,
+                "path": tflite_reg.model_path,
+                "name": tflite_reg.name
+            }
+        
+        # Find json file by inferring path from training directory
+        # JSON is typically in: .../train_{training_id}/weights/ne301_quant/quantized_models/*.json
+        training_dir = settings.DATASETS_ROOT / model_reg.project_id / f"train_{model_reg.training_id}"
+        if training_dir.exists():
+            json_dir = training_dir / "weights" / "ne301_quant" / "quantized_models"
+            if json_dir.exists():
+                json_files = list(json_dir.glob("*.json"))
+                if json_files:
+                    # Use the most recent json file
+                    json_file = max(json_files, key=lambda p: p.stat().st_mtime)
+                    related_files["json"] = {
+                        "path": str(json_file),
+                        "name": json_file.name
+                    }
+    
+    return related_files
+
+
+@router.get("/models/{model_id}/related/{file_type}/download")
+def download_related_file(
+    model_id: int,
+    file_type: str,
+    db: Session = Depends(get_db)
+):
+    """Download related file (tflite or json) for NE301 bin package"""
+    model_reg = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
+    if not model_reg:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    # Only for NE301 bin packages
+    if (model_reg.format or "").lower() != "bin" or (model_reg.model_type or "").lower() != "ne301":
+        raise HTTPException(
+            status_code=400,
+            detail="This endpoint is only for NE301 bin packages"
+        )
+    
+    is_standalone = model_reg.source == "standalone" or not model_reg.project_id
+    
+    if file_type == "tflite":
+        tflite_reg = None
+        
+        if is_standalone:
+            # For standalone models: find by name pattern
+            bin_name = model_reg.name
+            if bin_name.endswith("_ne301_bin"):
+                base_name = bin_name[:-10]  # Remove "_ne301_bin" suffix
+                expected_tflite_name = f"{base_name}_ne301_tflite"
+                
+                tflite_reg = (
+                    db.query(ModelRegistry)
+                    .filter(
+                        ModelRegistry.name == expected_tflite_name,
+                        ModelRegistry.format == "tflite",
+                        ModelRegistry.model_type == "ne301",
+                        ModelRegistry.source == "standalone",
+                        ModelRegistry.project_id.is_(None),
+                        ModelRegistry.training_id.is_(None)
+                    )
+                    .first()
+                )
+        else:
+            # For project-associated models: find from same training
+            if not model_reg.training_id or not model_reg.project_id:
+                raise HTTPException(status_code=404, detail="Training information not found")
+            
+            tflite_reg = (
+                db.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.project_id == model_reg.project_id,
+                    ModelRegistry.training_id == model_reg.training_id,
+                    ModelRegistry.format == "tflite",
+                    ModelRegistry.model_type == "ne301"
+                )
+                .first()
+            )
+        
+        if not tflite_reg:
+            raise HTTPException(status_code=404, detail="TFLite file not found")
+        
+        tflite_path = Path(tflite_reg.model_path)
+        if not tflite_path.exists():
+            raise HTTPException(status_code=404, detail="TFLite file does not exist")
+        
+        # Build friendly filename
+        if is_standalone:
+            # For standalone models, use model name
+            filename = f"{tflite_reg.name}.tflite" if not tflite_reg.name.endswith('.tflite') else tflite_reg.name
+        else:
+            project = db.query(Project).filter(Project.id == tflite_reg.project_id).first() if tflite_reg.project_id else None
+            class_names: List[str] = []
+            if tflite_reg.class_names:
+                try:
+                    raw = json.loads(tflite_reg.class_names)
+                    if isinstance(raw, list):
+                        class_names = [str(x) for x in raw]
+                except json.JSONDecodeError:
+                    pass
+            
+            db_record = None
+            if tflite_reg.training_id and tflite_reg.project_id:
+                db_record = (
+                    db.query(TrainingRecord)
+                    .filter(
+                        TrainingRecord.project_id == tflite_reg.project_id,
+                        TrainingRecord.training_id == tflite_reg.training_id,
+                    )
+                    .first()
+                )
+            
+            base_name = _build_model_basename(
+                project or Project(id=tflite_reg.project_id or "", name=tflite_reg.name or ""),
+                db_record,
+                tflite_reg.project_id or "",
+                tflite_reg.training_id,
+                class_names,
+            )
+            filename = f"{base_name}__ne301.tflite"
+        
+        return FileResponse(
+            path=str(tflite_path),
+            filename=filename,
+            media_type='application/octet-stream'
+        )
+    
+    elif file_type == "json":
+        json_file = None
+        
+        if is_standalone:
+            # For standalone models: find in standalone model directory
+            # JSON is stored in: standalone_models/{original_pt_model_id}/*.json
+            # We need to find the original PT model ID from the BIN model name
+            bin_name = model_reg.name
+            if bin_name.endswith("_ne301_bin"):
+                base_name = bin_name[:-10]  # Remove "_ne301_bin" suffix
+                original_model_name = base_name
+                
+                # Find original PT model to get its ID
+                original_pt_model = (
+                    db.query(ModelRegistry)
+                    .filter(
+                        ModelRegistry.name == original_model_name,
+                        ModelRegistry.format == "pt",
+                        ModelRegistry.source == "standalone",
+                        ModelRegistry.project_id.is_(None),
+                        ModelRegistry.training_id.is_(None)
+                    )
+                    .first()
+                )
+                
+                # Use original PT model ID to find JSON file
+                original_model_id = original_pt_model.id if original_pt_model else model_id
+            else:
+                original_model_id = model_id
+            
+            model_dir = settings.DATASETS_ROOT / "standalone_models" / str(original_model_id)
+            if not model_dir.exists():
+                raise HTTPException(status_code=404, detail="Standalone model directory not found")
+            
+            json_files = list(model_dir.glob("*.json"))
+            if not json_files:
+                raise HTTPException(status_code=404, detail="JSON file not found")
+            
+            json_file = max(json_files, key=lambda p: p.stat().st_mtime)
+            filename = json_file.name
+        else:
+            # For project-associated models: find from training directory
+            if not model_reg.training_id or not model_reg.project_id:
+                raise HTTPException(status_code=404, detail="Training information not found")
+            
+            training_dir = settings.DATASETS_ROOT / model_reg.project_id / f"train_{model_reg.training_id}"
+            if not training_dir.exists():
+                raise HTTPException(status_code=404, detail="Training directory not found")
+            
+            json_dir = training_dir / "weights" / "ne301_quant" / "quantized_models"
+            if not json_dir.exists():
+                raise HTTPException(status_code=404, detail="JSON directory not found")
+            
+            json_files = list(json_dir.glob("*.json"))
+            if not json_files:
+                raise HTTPException(status_code=404, detail="JSON file not found")
+            
+            json_file = max(json_files, key=lambda p: p.stat().st_mtime)
+            
+            # Build friendly filename
+            project = db.query(Project).filter(Project.id == model_reg.project_id).first() if model_reg.project_id else None
+            class_names: List[str] = []
+            if model_reg.class_names:
+                try:
+                    raw = json.loads(model_reg.class_names)
+                    if isinstance(raw, list):
+                        class_names = [str(x) for x in raw]
+                except json.JSONDecodeError:
+                    pass
+            
+            db_record = None
+            if model_reg.training_id and model_reg.project_id:
+                db_record = (
+                    db.query(TrainingRecord)
+                    .filter(
+                        TrainingRecord.project_id == model_reg.project_id,
+                        TrainingRecord.training_id == model_reg.training_id,
+                    )
+                    .first()
+                )
+            
+            base_name = _build_model_basename(
+                project or Project(id=model_reg.project_id or "", name=model_reg.name or ""),
+                db_record,
+                model_reg.project_id or "",
+                model_reg.training_id,
+                class_names,
+            )
+            filename = f"{base_name}__ne301.json"
+        
+        return FileResponse(
+            path=str(json_file),
+            filename=filename,
+            media_type='application/json'
+        )
+    
+    else:
+        raise HTTPException(status_code=400, detail="Invalid file_type. Must be 'tflite' or 'json'")
+
+
+@router.delete("/models/{model_id}")
+def delete_model(model_id: int, db: Session = Depends(get_db)):
+    """Delete model from ModelRegistry"""
+    model_reg = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
+    if not model_reg:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    # Delete model file if exists
+    model_path = Path(model_reg.model_path)
+    if model_path.exists():
+        try:
+            model_path.unlink()
+            logger.info(f"[ModelRegistry] Deleted model file: {model_path}")
+        except Exception as e:
+            logger.warning(f"[ModelRegistry] Failed to delete model file {model_path}: {e}")
+    
+    # Delete database record
+    db.delete(model_reg)
+    db.commit()
+    
+    return {"message": "Model deleted successfully"}
+
+
+async def _test_tflite_model(
+    model_path: Path,
+    model_reg: ModelRegistry,
+    file: UploadFile,
+    conf: float,
+    iou: float,
+    db: Session
+):
+    """
+    Test TFLite model (including quantized models with uint8 input)
+    Uses TensorFlow Lite Interpreter for proper uint8/int8 handling
+    """
+    try:
+        import numpy as np
+        import tensorflow as tf
+        
+        # Read uploaded image
+        image_bytes = await file.read()
+        image = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+        
+        # Load TFLite model first to get actual input shape
+        interpreter = tf.lite.Interpreter(model_path=str(model_path))
+        interpreter.allocate_tensors()
+        
+        # Get input and output details
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        
+        # Validate input and output details
+        if not input_details:
+            raise ValueError("Model has no input tensors")
+        if not output_details:
+            raise ValueError("Model has no output tensors")
+        
+        logger.info(f"[TFLiteTest] Input details: {len(input_details)} inputs")
+        logger.info(f"[TFLiteTest] Output details: {len(output_details)} outputs")
+        for i, inp in enumerate(input_details):
+            logger.info(f"[TFLiteTest] Input {i}: shape={inp['shape']}, dtype={inp['dtype']}, name={inp.get('name', 'N/A')}")
+        for i, out in enumerate(output_details):
+            logger.info(f"[TFLiteTest] Output {i}: shape={out['shape']}, dtype={out['dtype']}, name={out.get('name', 'N/A')}")
+        
+        # Check input type and shape
+        input_dtype = input_details[0]['dtype']
+        input_shape = input_details[0]['shape']
+        
+        # Get actual input size from model's input shape (prefer model's actual shape over registry)
+        # TFLite YOLO models typically have input shape [1, height, width, 3]
+        if len(input_shape) >= 4:
+            # Extract height and width from shape [batch, height, width, channels]
+            # For YOLO models, shape is usually [1, H, W, 3] where H == W (square input)
+            height = input_shape[1]
+            width = input_shape[2]
+            
+            # Validate: height and width should be equal for square inputs, and channels should be 3
+            if height == width and input_shape[3] == 3:
+                input_size = height
+                logger.info(f"[TFLiteTest] Extracted input size {input_size} from model shape {input_shape}")
+            else:
+                # Non-square or unexpected shape, use the larger dimension
+                input_size = max(height, width)
+                logger.warning(f"[TFLiteTest] Non-square input shape {input_shape}, using max dimension: {input_size}")
+        else:
+            # Fallback to registry or default
+            input_size = model_reg.input_width or model_reg.input_height or 640
+            if model_reg.input_width and model_reg.input_height:
+                input_size = model_reg.input_width  # Use width (assuming square)
+            logger.warning(f"[TFLiteTest] Could not extract input size from shape {input_shape}, using registry/default: {input_size}")
+        
+        # Resize image to model input size
+        image_resized = image.resize((input_size, input_size), PILImage.Resampling.LANCZOS)
+        image_array = np.array(image_resized, dtype=np.uint8)
+        
+        # Prepare input data based on model requirements
+        # Handle dynamic shapes (where shape contains -1 or 0)
+        actual_input_shape = list(input_shape)
+        for i, dim in enumerate(actual_input_shape):
+            if dim <= 0:  # Handle -1 (dynamic) or 0
+                if i == 1:  # height dimension
+                    actual_input_shape[i] = input_size
+                elif i == 2:  # width dimension
+                    actual_input_shape[i] = input_size
+                else:
+                    actual_input_shape[i] = 1 if i == 0 else 3 if i == 3 else dim
+        
+        # Ensure image array matches expected shape [1, H, W, 3]
+        if len(image_array.shape) == 3:  # (H, W, 3)
+            image_array = np.expand_dims(image_array, axis=0)  # Add batch dimension -> (1, H, W, 3)
+        
+        # Prepare input data based on model requirements
+        if input_dtype == np.uint8:
+            # For uint8 input, use image array directly (0-255 range)
+            input_data = image_array.reshape(tuple(actual_input_shape)).astype(np.uint8)
+        elif input_dtype == np.int8:
+            # For int8 input, convert from uint8 to int8 (0-255 -> -128 to 127)
+            input_data = (image_array.astype(np.int16) - 128).astype(np.int8).reshape(tuple(actual_input_shape))
+        elif input_dtype == np.float32:
+            # For float32 input, normalize to 0-1 range
+            input_data = (image_array.astype(np.float32) / 255.0).reshape(tuple(actual_input_shape))
+        else:
+            input_data = image_array.reshape(tuple(actual_input_shape)).astype(input_dtype)
+        
+        # Set input tensor
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        
+        # Run inference
+        interpreter.invoke()
+        
+        # Get output (use first output tensor)
+        output_detail = output_details[0]
+        output_data = interpreter.get_tensor(output_detail['index'])
+        
+        # Check if output is quantized (int8) and dequantize if needed
+        quant_params = output_detail.get('quantization_parameters', {})
+        output_scales = quant_params.get('scales', [])
+        output_zero_points = quant_params.get('zero_points', [])
+        
+        # Safely extract scale and zero_point with detailed logging
+        logger.info(f"[TFLiteTest] Quantization params: scales={output_scales}, zero_points={output_zero_points}")
+        if output_scales and len(output_scales) > 0:
+            output_scale = output_scales[0]
+        else:
+            output_scale = None
+            logger.info(f"[TFLiteTest] No output scale available (scales list is empty or missing)")
+        
+        if output_zero_points and len(output_zero_points) > 0:
+            output_zero_point = output_zero_points[0]
+        else:
+            output_zero_point = None
+            logger.info(f"[TFLiteTest] No output zero_point available (zero_points list is empty or missing)")
+        
+        if output_data.dtype == np.int8 and output_scale is not None:
+            # Dequantize int8 output to float32
+            output_data = (output_data.astype(np.float32) - (output_zero_point or 0)) * output_scale
+            logger.info(f"[TFLiteTest] Dequantized output: scale={output_scale}, zero_point={output_zero_point}")
+        elif output_data.dtype == np.uint8 and output_scale is not None:
+            # Dequantize uint8 output to float32
+            output_data = (output_data.astype(np.float32) - (output_zero_point or 0)) * output_scale
+            logger.info(f"[TFLiteTest] Dequantized output: scale={output_scale}, zero_point={output_zero_point}")
+        
+        # Parse YOLO output format
+        # YOLOv8 TFLite output shape is typically: (1, 84, 8400) or (1, num_features, num_boxes)
+        # Format: [x_center, y_center, width, height, class_scores...] (no separate objectness)
+        # Where 84 = 4 (bbox) + 80 (classes) for COCO, or 4 + num_classes for custom
+        output_shape = output_data.shape
+        logger.info(f"[TFLiteTest] Output shape: {output_shape}, dtype: {output_data.dtype}")
+        logger.info(f"[TFLiteTest] Output min/max: {np.min(output_data)}, {np.max(output_data)}")
+        
+        # Get class names
+        class_names: List[str] = []
+        if model_reg.class_names:
+            try:
+                raw = json.loads(model_reg.class_names)
+                if isinstance(raw, list):
+                    class_names = [str(x) for x in raw]
+            except json.JSONDecodeError:
+                pass
+        
+        num_classes = len(class_names) if class_names else (model_reg.num_classes or 80)
+        logger.info(f"[TFLiteTest] Num classes: {num_classes}, class names: {class_names[:5] if class_names else 'N/A'}")
+        
+        # Parse YOLO detections from output
+        detections = []
+        
+        # YOLOv8 TFLite output is typically (1, 4+num_classes, num_boxes)
+        # Transpose to (num_boxes, 4+num_classes) for easier processing
+        if len(output_shape) == 3:
+            # Shape: (batch, features, boxes) -> (boxes, features)
+            output_data = output_data[0].transpose()  # Remove batch, transpose to (boxes, features)
+        elif len(output_shape) == 2:
+            # Shape: (features, boxes) -> (boxes, features)
+            output_data = output_data.transpose()
+        
+        # Now output_data is (num_boxes, 4+num_classes)
+        num_boxes = output_data.shape[0]
+        features_per_box = output_data.shape[1]
+        
+        logger.info(f"[TFLiteTest] Processed shape: {output_data.shape}, num_boxes: {num_boxes}, features_per_box: {features_per_box}")
+        
+        # Process each detection box
+        for i in range(num_boxes):
+            box_data = output_data[i]
+            
+            if features_per_box < 4:
+                continue
+            
+            # Extract box coordinates (normalized 0-1)
+            x_center = float(box_data[0])
+            y_center = float(box_data[1])
+            width = float(box_data[2])
+            height = float(box_data[3])
+            
+            # YOLOv8 format: [x_center, y_center, width, height, class_scores...]
+            # No separate objectness score, confidence is max(class_scores)
+            if features_per_box >= 4 + num_classes:
+                # Get class scores (elements 4 to 4+num_classes)
+                class_scores = box_data[4:4+num_classes]
+                class_id = int(np.argmax(class_scores))
+                confidence = float(class_scores[class_id])
+            elif features_per_box > 4:
+                # Fallback: use remaining elements as class scores
+                class_scores = box_data[4:]
+                if len(class_scores) > 0:
+                    class_id = int(np.argmax(class_scores))
+                    confidence = float(class_scores[class_id])
+                else:
+                    continue
+            else:
+                # No class scores, skip
+                continue
+            
+            # Apply confidence threshold
+            if confidence < conf:
+                continue
+            
+            # Convert from center format to corner format (normalized coordinates)
+            x1_norm = x_center - width / 2
+            y1_norm = y_center - height / 2
+            x2_norm = x_center + width / 2
+            y2_norm = y_center + height / 2
+            
+            # Clamp to [0, 1]
+            x1_norm = max(0.0, min(1.0, x1_norm))
+            y1_norm = max(0.0, min(1.0, y1_norm))
+            x2_norm = max(0.0, min(1.0, x2_norm))
+            y2_norm = max(0.0, min(1.0, y2_norm))
+            
+            # Scale to original image size
+            scale_x = image.width / input_size
+            scale_y = image.height / input_size
+            x1 = float(x1_norm * input_size * scale_x)
+            y1 = float(y1_norm * input_size * scale_y)
+            x2 = float(x2_norm * input_size * scale_x)
+            y2 = float(y2_norm * input_size * scale_y)
+            
+            # Ensure valid bbox
+            if x2 <= x1 or y2 <= y1:
+                continue
+            
+            cls_name = class_names[class_id] if class_names and class_id < len(class_names) else f"class_{class_id}"
+            
+            detections.append({
+                "class_id": class_id,
+                "class_name": cls_name,
+                "confidence": confidence,
+                "bbox": {
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2
+                }
+            })
+        
+        logger.info(f"[TFLiteTest] Parsed {len(detections)} detections before NMS")
+        
+        # Apply NMS (Non-Maximum Suppression) using IoU threshold
+        if len(detections) > 1:
+            # Simple NMS implementation
+            detections_sorted = sorted(detections, key=lambda d: d['confidence'], reverse=True)
+            detections_filtered = []
+            used = [False] * len(detections_sorted)
+            
+            for i, det1 in enumerate(detections_sorted):
+                if used[i]:
+                    continue
+                detections_filtered.append(det1)
+                
+                for j in range(i + 1, len(detections_sorted)):
+                    if used[j]:
+                        continue
+                    det2 = detections_sorted[j]
+                    
+                    # Calculate IoU
+                    bbox1 = det1['bbox']
+                    bbox2 = det2['bbox']
+                    
+                    # Intersection
+                    x1_i = max(bbox1['x1'], bbox2['x1'])
+                    y1_i = max(bbox1['y1'], bbox2['y1'])
+                    x2_i = min(bbox1['x2'], bbox2['x2'])
+                    y2_i = min(bbox1['y2'], bbox2['y2'])
+                    
+                    if x2_i <= x1_i or y2_i <= y1_i:
+                        continue
+                    
+                    intersection = (x2_i - x1_i) * (y2_i - y1_i)
+                    area1 = (bbox1['x2'] - bbox1['x1']) * (bbox1['y2'] - bbox1['y1'])
+                    area2 = (bbox2['x2'] - bbox2['x1']) * (bbox2['y2'] - bbox2['y1'])
+                    union = area1 + area2 - intersection
+                    
+                    if union > 0:
+                        iou_score = intersection / union
+                        if iou_score > iou:
+                            used[j] = True
+            
+            detections = detections_filtered
+        
+        # Draw detections on image
+        from PIL import ImageDraw, ImageFont
+        annotated_image = image.copy()
+        draw = ImageDraw.Draw(annotated_image)
+        
+        for det in detections:
+            bbox = det['bbox']
+            x1, y1, x2, y2 = bbox['x1'], bbox['y1'], bbox['x2'], bbox['y2']
+            
+            # Draw bounding box
+            draw.rectangle([x1, y1, x2, y2], outline='red', width=2)
+            
+            # Draw label
+            label = f"{det['class_name']} {det['confidence']:.2f}"
+            draw.text((x1, y1 - 15), label, fill='red')
+        
+        # Convert to base64
+        import base64
+        img_buffer = io.BytesIO()
+        annotated_image.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
+        debug_line = (
+            f"[TFLiteTest] model_path={model_path} input_dtype={input_dtype} "
+            f"img={image.width}x{image.height} input_size={input_size} "
+            f"detections={len(detections)} conf={conf:.3f} iou={iou:.3f}"
+        )
+        logger.info(debug_line)
+        print(debug_line)
+        
+        return {
+            "detections": detections,
+            "detection_count": len(detections),
+            "annotated_image": f"data:image/png;base64,{img_base64}",
+            "image_size": {
+                "width": image.width,
+                "height": image.height
+            }
+        }
+        
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"TensorFlow Lite library is not installed: {str(e)}"
+        )
+    except Exception as e:
+        logger.error(f"[TFLiteTest] Error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"TFLite model inference failed: {str(e)}"
+        )
+
+
+@router.post("/models/{model_id}/test")
+async def test_model_by_id(
+    model_id: int,
+    file: UploadFile = File(...),
+    conf: float = Query(0.25, ge=0.0, le=1.0),
+    iou: float = Query(0.45, ge=0.0, le=1.0),
+    db: Session = Depends(get_db)
+):
+    """Test model from ModelRegistry by model_id (supports PT, TFLite, and NE301 bin via tflite)"""
+    model_reg = db.query(ModelRegistry).filter(ModelRegistry.id == model_id).first()
+    if not model_reg:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_path = Path(model_reg.model_path)
+    if not model_path.exists():
+        raise HTTPException(status_code=404, detail="Model file not found")
+    
+    model_format = (model_reg.format or "pt").lower()
+    model_type = (model_reg.model_type or "").lower()
+    
+    # For NE301 bin packages, find and use the associated ne301.tflite file for testing
+    tflite_path = None
+    if model_format in ("bin", "ne301_bin") and model_type == "ne301":
+        # Find associated NE301 tflite file
+        tflite_reg = None
+        is_standalone = model_reg.source == "standalone" or not model_reg.project_id
+        
+        if is_standalone:
+            # For standalone models: find by name pattern and source
+            # BIN model name format: {name}_ne301_bin
+            # TFLite model name format: {name}_ne301_tflite
+            bin_name = model_reg.name
+            if bin_name.endswith("_ne301_bin"):
+                base_name = bin_name[:-10]  # Remove "_ne301_bin" suffix
+                expected_tflite_name = f"{base_name}_ne301_tflite"
+                
+                tflite_reg = (
+                    db.query(ModelRegistry)
+                    .filter(
+                        ModelRegistry.name == expected_tflite_name,
+                        ModelRegistry.format == "tflite",
+                        ModelRegistry.model_type == "ne301",
+                        ModelRegistry.source == "standalone",
+                        ModelRegistry.project_id.is_(None),
+                        ModelRegistry.training_id.is_(None)
+                    )
+                    .first()
+                )
+            
+            # Fallback: find any standalone NE301 tflite with matching input size
+            if not tflite_reg:
+                tflite_reg = (
+                    db.query(ModelRegistry)
+                    .filter(
+                        ModelRegistry.format == "tflite",
+                        ModelRegistry.model_type == "ne301",
+                        ModelRegistry.source == "standalone",
+                        ModelRegistry.project_id.is_(None),
+                        ModelRegistry.training_id.is_(None),
+                        ModelRegistry.input_width == model_reg.input_width,
+                        ModelRegistry.input_height == model_reg.input_height
+                    )
+                    .order_by(ModelRegistry.created_at.desc())
+                    .first()
+                )
+        elif model_reg.training_id:
+            # For models from training: find by project_id and training_id
+            tflite_reg = (
+                db.query(ModelRegistry)
+                .filter(
+                    ModelRegistry.project_id == model_reg.project_id,
+                    ModelRegistry.training_id == model_reg.training_id,
+                    ModelRegistry.format == "tflite",
+                    ModelRegistry.model_type == "ne301"
+                )
+                .first()
+            )
+        else:
+            # For externally imported models with project: find by project_id and name pattern
+            # BIN model name format: {name}_ne301_bin
+            # TFLite model name format: {name}_ne301_tflite
+            bin_name = model_reg.name
+            if bin_name.endswith("_ne301_bin"):
+                base_name = bin_name[:-10]  # Remove "_ne301_bin" suffix
+                expected_tflite_name = f"{base_name}_ne301_tflite"
+                
+                tflite_reg = (
+                    db.query(ModelRegistry)
+                    .filter(
+                        ModelRegistry.project_id == model_reg.project_id,
+                        ModelRegistry.name == expected_tflite_name,
+                        ModelRegistry.format == "tflite",
+                        ModelRegistry.model_type == "ne301",
+                        ModelRegistry.training_id.is_(None)  # Also from import
+                    )
+                    .first()
+                )
+            
+            # Fallback: find any NE301 tflite in the same project with matching input size
+            if not tflite_reg:
+                tflite_reg = (
+                    db.query(ModelRegistry)
+                    .filter(
+                        ModelRegistry.project_id == model_reg.project_id,
+                        ModelRegistry.format == "tflite",
+                        ModelRegistry.model_type == "ne301",
+                        ModelRegistry.training_id.is_(None),
+                        ModelRegistry.input_width == model_reg.input_width,
+                        ModelRegistry.input_height == model_reg.input_height
+                    )
+                    .order_by(ModelRegistry.created_at.desc())
+                    .first()
+                )
+        
+        if not tflite_reg:
+            raise HTTPException(
+                status_code=404,
+                detail="Associated NE301 TFLite file not found. Please ensure quantization was completed."
+            )
+        
+        tflite_path = Path(tflite_reg.model_path)
+        if not tflite_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail="Associated NE301 TFLite file does not exist on disk."
+            )
+        
+        # Use tflite file for testing
+        model_path = tflite_path
+        model_format = "tflite"
+        model_reg = tflite_reg  # Use tflite registry for class names, etc.
+        logger.info(f"[Test] Using associated TFLite file for NE301 bin testing: {tflite_path}")
+    
+    # Handle TFLite models (including NE301 quantized models with uint8 input)
+    if model_format == "tflite":
+        return await _test_tflite_model(
+            model_path=model_path,
+            model_reg=model_reg,
+            file=file,
+            conf=conf,
+            iou=iou,
+            db=db
+        )
+    
+    try:
+        from ultralytics import YOLO
+        
+        # Read uploaded image
+        image_bytes = await file.read()
+        image = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+        
+        # Load model (YOLO supports PT and TFLite when environment is configured)
+        model = YOLO(str(model_path))
+        
+        # Perform inference
+        results = model.predict(
+            source=image,
+            conf=conf,
+            iou=iou,
+            save=False,
+            verbose=False
+        )
+        
+        # Parse results
+        result = results[0]
+        detections = []
+        
+        # Get class names (from model or ModelRegistry)
+        names = result.names if hasattr(result, 'names') else {}
+        if not names and model_reg.class_names:
+            try:
+                raw = json.loads(model_reg.class_names)
+                if isinstance(raw, list):
+                    names = {i: name for i, name in enumerate(raw)}
+            except json.JSONDecodeError:
+                pass
+        
+        # Check if there are detection boxes
+        if hasattr(result, 'boxes') and result.boxes is not None:
+            for box in result.boxes:
+                # Get bounding box coordinates
+                xyxy = box.xyxy[0].cpu().numpy()
+                conf_score = float(box.conf[0].cpu().numpy())
+                cls_id = int(box.cls[0].cpu().numpy())
+                cls_name = names.get(cls_id, f"class_{cls_id}")
+                
+                detections.append({
+                    "class_id": cls_id,
+                    "class_name": cls_name,
+                    "confidence": conf_score,
+                    "bbox": {
+                        "x1": float(xyxy[0]),
+                        "y1": float(xyxy[1]),
+                        "x2": float(xyxy[2]),
+                        "y2": float(xyxy[3])
+                    }
+                })
+        
+        # Debug log
+        has_boxes = hasattr(result, 'boxes') and result.boxes is not None
+        boxes_count = len(result.boxes) if has_boxes else 0
+        debug_line = (
+            f"[TestPredict] model_id={model_id} format={model_format} "
+            f"img={image.width}x{image.height} boxes_count={boxes_count} detections={len(detections)} "
+            f"conf={conf:.3f} iou={iou:.3f} names={list(names.values()) if names else 'N/A'}"
+        )
+        try:
+            logger.info(debug_line)
+        except Exception:
+            pass
+        print(debug_line)
+        
+        # Draw detection results on image
+        annotated_bgr = result.plot()
+        annotated_rgb = annotated_bgr[..., ::-1]  # BGR -> RGB
+        annotated_pil = PILImage.fromarray(annotated_rgb)
+        
+        # Convert to base64
+        import base64
+        img_buffer = io.BytesIO()
+        annotated_pil.save(img_buffer, format='PNG')
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+        
+        return {
+            "detections": detections,
+            "detection_count": len(detections),
+            "annotated_image": f"data:image/png;base64,{img_base64}",
+            "image_size": {
+                "width": image.width,
+                "height": image.height
+            }
+        }
+        
+    except ImportError:
+        raise HTTPException(status_code=500, detail="Ultralytics library is not installed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Model inference failed: {str(e)}")
 
 
 # ========== MQTT Service Management ==========

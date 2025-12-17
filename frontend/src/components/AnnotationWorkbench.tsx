@@ -12,6 +12,8 @@ import { API_BASE_URL } from '../config';
 import { IoArrowBack, IoDownload, IoChevronDown, IoCloudUpload, IoRocket } from 'react-icons/io5';
 import './AnnotationWorkbench.css';
 import { Button } from '../ui/Button';
+import { Alert } from '../ui/Alert';
+import { useAlert } from '../hooks/useAlert';
 
 // Icon component wrapper to resolve TypeScript type issues
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -27,7 +29,7 @@ interface Project {
 interface AnnotationWorkbenchProps {
   project: Project;
   onBack: () => void;
-  onOpenTraining?: (projectId: string) => void;
+  onOpenTraining?: (projectId: string, trainingId?: string) => void;
 }
 
 export type ToolType = 'select' | 'bbox' | 'polygon' | 'keypoint';
@@ -63,6 +65,7 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   onOpenTraining
 }) => {
   const { t } = useTranslation();
+  const { alertState, showError, closeAlert } = useAlert();
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(-1);
@@ -430,11 +433,11 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
       } else {
         const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
         console.error('Failed to delete annotation:', errorData);
-        alert(`Delete failed: ${errorData.detail || 'Unknown error'}`);
+        showError(`Delete failed: ${errorData.detail || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Failed to delete annotation:', error);
-      alert('Error occurred while deleting annotation, please check network connection');
+      showError('Error occurred while deleting annotation, please check network connection');
     }
   }, [selectedAnnotationId, currentImageIndex, images, project.id, addToHistory]);
 
@@ -561,7 +564,7 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
         document.body.removeChild(a);
       }
     } catch (error: any) {
-      alert(`${t('common.exportFailed', 'Export failed')}: ${error.message}`);
+      showError(`${t('common.exportFailed', 'Export failed')}: ${error.message}`);
     } finally {
       setIsExporting(false);
     }
@@ -744,6 +747,17 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           fetchImages();
           fetchClasses();
         }}
+      />
+
+      {/* Alert Dialog */}
+      <Alert
+        open={alertState.open}
+        onOpenChange={closeAlert}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        confirmText={alertState.confirmText || t('common.confirm', '确定')}
+        onConfirm={alertState.onConfirm}
       />
     </div>
   );

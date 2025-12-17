@@ -7,6 +7,10 @@ import './ControlPanel.css';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { FormField } from '../ui/FormField';
+import { Alert } from '../ui/Alert';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { useAlert } from '../hooks/useAlert';
+import { useConfirm } from '../hooks/useConfirm';
 
 // Icon component wrapper to resolve TypeScript type issues
 const Icon: React.FC<{ component: React.ComponentType<any> }> = ({ component: Component }) => {
@@ -49,6 +53,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onImageDelete
 }) => {
   const { t } = useTranslation();
+  const { alertState, showSuccess, showError, showWarning, closeAlert } = useAlert();
+  const { confirmState, showConfirm, closeConfirm } = useConfirm();
   const [newClassName, setNewClassName] = useState('');
   const [newClassColor, setNewClassColor] = useState('#EB814F');
   const [isUploading, setIsUploading] = useState(false);
@@ -111,31 +117,35 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   const handleDeleteImage = async (imageId: number, event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent triggering image selection
-    
-    if (!window.confirm(t('annotation.deleteImageConfirm'))) {
-      return;
-    }
-    
-    setIsDeleting(imageId);
-    try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/images/${imageId}`, {
-        method: 'DELETE'
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || t('annotation.deleteFailed'));
+
+    showConfirm(
+      t('annotation.deleteImageConfirm'),
+      async () => {
+        setIsDeleting(imageId);
+        try {
+          const response = await fetch(`${API_BASE_URL}/projects/${projectId}/images/${imageId}`, {
+            method: 'DELETE'
+          });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || t('annotation.deleteFailed'));
+          }
+          
+          // Notify parent component to refresh image list
+          if (onImageDelete) {
+            onImageDelete();
+          }
+        } catch (error: any) {
+          showError(`${t('annotation.deleteFailed')}: ${error.message}`);
+        } finally {
+          setIsDeleting(null);
+        }
+      },
+      {
+        variant: 'danger',
       }
-      
-      // Notify parent component to refresh image list
-      if (onImageDelete) {
-        onImageDelete();
-      }
-    } catch (error: any) {
-      alert(`${t('annotation.deleteFailed')}: ${error.message}`);
-    } finally {
-      setIsDeleting(null);
-    }
+    );
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -163,7 +173,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
     // Show invalid file warnings
     if (invalidFiles.length > 0) {
-      alert(`${t('annotation.invalidFiles')}：\n${invalidFiles.join('\n')}\n\n${t('annotation.skipInvalidFiles')}`);
+      showWarning(`${t('annotation.invalidFiles')}：\n${invalidFiles.join('\n')}\n\n${t('annotation.skipInvalidFiles')}`);
     }
 
     if (validFiles.length === 0) {
@@ -229,13 +239,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
     if (successCount > 0 && failCount === 0) {
       // All successful
-      alert(t('annotation.uploadSuccess', { count: successCount }));
+      showSuccess(t('annotation.uploadSuccess', { count: successCount }));
     } else if (successCount > 0 && failCount > 0) {
       // Partially successful
-      alert(`${t('annotation.uploadPartial', { success: successCount, fail: failCount })}\n\n${t('common.errorDetails', 'Error details')}:\n${errors.join('\n')}`);
+      showWarning(`${t('annotation.uploadPartial', { success: successCount, fail: failCount })}\n\n${t('common.errorDetails', 'Error details')}:\n${errors.join('\n')}`);
     } else {
       // All failed
-      alert(`${t('annotation.uploadAllFailed', { count: failCount })}\n${errors.join('\n')}`);
+      showError(`${t('annotation.uploadAllFailed', { count: failCount })}\n${errors.join('\n')}`);
     }
   };
 
@@ -245,7 +255,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   const handleCreateClass = async () => {
     if (!newClassName.trim()) {
-      alert(t('annotation.classNameRequired'));
+      showWarning(t('annotation.classNameRequired'));
       return;
     }
 
@@ -266,11 +276,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         setNewClassColor(generateRandomColor()); // Reset to random color
         onCreateClass();
       } else {
-        alert(t('annotation.createClassFailed'));
+        showError(t('annotation.createClassFailed'));
       }
     } catch (error) {
       console.error('Failed to create class:', error);
-      alert(t('annotation.createClassFailed'));
+      showError(t('annotation.createClassFailed'));
     }
   };
 
@@ -279,25 +289,29 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     
     const classToDelete = classes.find(c => c.id === classId);
     if (!classToDelete) return;
-    
-    if (!window.confirm(t('annotation.deleteClassConfirm', { name: classToDelete.name }))) {
-      return;
-    }
-    
-    try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/classes/${classId}`, {
-        method: 'DELETE'
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || t('annotation.deleteFailed'));
+
+    showConfirm(
+      t('annotation.deleteClassConfirm', { name: classToDelete.name }),
+      async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/projects/${projectId}/classes/${classId}`, {
+            method: 'DELETE'
+          });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || t('annotation.deleteFailed'));
+          }
+          
+          onCreateClass(); // Refresh class list
+        } catch (error: any) {
+          showError(`${t('annotation.deleteClassFailed')}: ${error.message}`);
+        }
+      },
+      {
+        variant: 'danger',
       }
-      
-      onCreateClass(); // Refresh class list
-    } catch (error: any) {
-      alert(`${t('annotation.deleteClassFailed')}: ${error.message}`);
-    }
+    );
   };
 
   return (
@@ -416,8 +430,16 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                           className="annotation-delete-btn"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (ann.id && window.confirm(t('annotation.deleteConfirm', '确定要删除这个标注吗？'))) {
-                              onAnnotationDelete(ann.id);
+                            if (ann.id) {
+                              showConfirm(
+                                t('annotation.deleteConfirm', '确定要删除这个标注吗？'),
+                                () => {
+                                  onAnnotationDelete(ann.id!);
+                                },
+                                {
+                                  variant: 'danger',
+                                }
+                              );
                             }
                           }}
                           title={t('annotation.delete')}
@@ -510,6 +532,30 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Alert Dialog */}
+      <Alert
+        open={alertState.open}
+        onOpenChange={closeAlert}
+        title={alertState.title}
+        message={alertState.message}
+        type={alertState.type}
+        confirmText={alertState.confirmText || t('common.confirm', '确定')}
+        onConfirm={alertState.onConfirm}
+      />
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmState.open}
+        onOpenChange={closeConfirm}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmText={confirmState.confirmText}
+        cancelText={confirmState.cancelText}
+        onConfirm={confirmState.onConfirm || (() => {})}
+        onCancel={confirmState.onCancel}
+        variant={confirmState.variant}
+      />
     </div>
   );
 };

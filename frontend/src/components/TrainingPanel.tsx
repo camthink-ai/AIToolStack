@@ -8,10 +8,15 @@ import { Button } from '../ui/Button';
 import { FormField } from '../ui/FormField';
 import { Input } from '../ui/Input';
 import { Select, SelectItem } from '../ui/Select';
+import { Alert } from '../ui/Alert';
+import { ConfirmDialog } from '../ui/ConfirmDialog';
+import { useAlert } from '../hooks/useAlert';
+import { useConfirm } from '../hooks/useConfirm';
 
 interface TrainingPanelProps {
   projectId: string;
   onClose: () => void;
+  initialTrainingId?: string;
 }
 
 interface TrainingRecord {
@@ -79,10 +84,12 @@ interface TrainingRequest {
   mixup?: number;
 }
 
-export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose }) => {
+export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose, initialTrainingId }) => {
   const { t, i18n } = useTranslation();
+  const { alertState, showSuccess, showError, showWarning, closeAlert } = useAlert();
+  const { confirmState, showConfirm, closeConfirm } = useConfirm();
   const [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]);
-  const [selectedTrainingId, setSelectedTrainingId] = useState<string | null>(null);
+  const [selectedTrainingId, setSelectedTrainingId] = useState<string | null>(initialTrainingId ?? null);
   const [trainingLogs, setTrainingLogs] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -106,6 +113,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   const [quantFractionInput, setQuantFractionInput] = useState('0.2');
   const quantTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const quantTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [pendingQuantClose, setPendingQuantClose] = useState<(() => void) | null>(null);
   const [trainingConfig, setTrainingConfig] = useState<TrainingRequest>({
     model_type: 'yolov8',
     model_size: 'n',
@@ -171,9 +179,14 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
       const data = await response.json();
       setTrainingRecords(data);
       
-      // If no training is selected, select the latest (first one)
+      // If no training is selected, select initialTrainingId (if exists and valid), otherwise latest (first one)
       setSelectedTrainingId(prev => {
-        if (!prev && data.length > 0) {
+        if (prev) return prev;
+        if (initialTrainingId) {
+          const exists = data.some((r: TrainingRecord) => r.training_id === initialTrainingId);
+          if (exists) return initialTrainingId;
+        }
+        if (data.length > 0) {
           return data[0].training_id;
         }
         return prev;
@@ -195,7 +208,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
     } catch (error) {
       console.error('Failed to fetch training records:', error);
     }
-  }, [projectId]);
+  }, [projectId, initialTrainingId]);
 
   // Fetch training record list
   useEffect(() => {
@@ -409,9 +422,9 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
     } catch (error: any) {
       console.error('Training start error:', error);
       if (error.name === 'AbortError') {
-        alert(`${t('training.startTrainingFailed')}: Request timeout. Please check if the server is responding.`);
+        showError(`${t('training.startTrainingFailed')}: Request timeout. Please check if the server is responding.`);
       } else {
-        alert(`${t('training.startTrainingFailed')}: ${error.message || 'Unknown error'}`);
+        showError(`${t('training.startTrainingFailed')}: ${error.message || 'Unknown error'}`);
       }
     } finally {
       setIsLoading(false);
@@ -419,60 +432,68 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
   };
 
   const handleStopTraining = async () => {
-    if (!window.confirm(t('training.confirmStop'))) {
-      return;
-    }
+    showConfirm(
+      t('training.confirmStop'),
+      async () => {
+        setIsLoading(true);
+        try {
+          const response = await fetch(`${API_BASE_URL}/projects/${projectId}/train/stop${selectedTrainingId ? `?training_id=${selectedTrainingId}` : ''}`, {
+            method: 'POST',
+          });
 
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/train/stop${selectedTrainingId ? `?training_id=${selectedTrainingId}` : ''}`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || t('training.stopTrainingFailed'));
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || t('training.stopTrainingFailed'));
+          }
+          // After stopping, refresh records and logs
+          await fetchRecords();
+        } catch (error: any) {
+          showError(`${t('training.stopTrainingFailed')}: ${error.message}`);
+        } finally {
+          setIsLoading(false);
+        }
+      },
+      {
+        variant: 'warning',
       }
-      // After stopping, refresh records and logs
-      await fetchRecords();
-    } catch (error: any) {
-      alert(`${t('training.stopTrainingFailed')}: ${error.message}`);
-    } finally {
-      setIsLoading(false);
-    }
+    );
   };
 
   const handleDeleteRecord = async (trainingId: string) => {
-    if (!window.confirm(t('training.confirmDelete'))) {
-      return;
-    }
+    showConfirm(
+      t('training.confirmDelete'),
+      async () => {
+        try {
+          const response = await fetch(`${API_BASE_URL}/projects/${projectId}/train?training_id=${trainingId}`, {
+            method: 'DELETE',
+          });
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/train?training_id=${trainingId}`, {
-        method: 'DELETE',
-      });
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || t('training.deleteFailed'));
+          }
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || t('training.deleteFailed'));
+          // If deleted record is currently selected, switch to another record
+          if (selectedTrainingId === trainingId) {
+            const remaining = trainingRecords.filter(r => r.training_id !== trainingId);
+            setSelectedTrainingId(remaining.length > 0 ? remaining[0].training_id : null);
+          }
+          
+          // Refresh training record list
+          await fetchRecords();
+        } catch (error: any) {
+          showError(`${t('training.deleteFailed')}: ${error.message}`);
+        }
+      },
+      {
+        variant: 'danger',
       }
-
-      // If deleted record is currently selected, switch to another record
-      if (selectedTrainingId === trainingId) {
-        const remaining = trainingRecords.filter(r => r.training_id !== trainingId);
-        setSelectedTrainingId(remaining.length > 0 ? remaining[0].training_id : null);
-      }
-      
-      // Refresh training record list
-      await fetchRecords();
-    } catch (error: any) {
-      alert(`${t('training.deleteFailed')}: ${error.message}`);
-    }
+    );
   };
 
   const handleExportModel = async () => {
     if (!currentStatus?.model_path) {
-      alert(t('training.modelFileNotExists'));
+      showError(t('training.modelFileNotExists'));
       return;
     }
 
@@ -492,13 +513,13 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error: any) {
-      alert(`${t('training.exportModelFailed')}: ${error.message}`);
+      showError(`${t('training.exportModelFailed')}: ${error.message}`);
     }
   };
 
   const handleTestModel = () => {
     if (!currentStatus?.model_path) {
-      alert(t('training.modelFileNotExists'));
+      showError(t('training.modelFileNotExists'));
       return;
     }
     setShowTestModal(true);
@@ -510,7 +531,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
 
   const handleQuantModel = () => {
     if (!currentStatus?.model_path) {
-      alert(t('training.modelFileNotExists'));
+      showError(t('training.modelFileNotExists'));
       return;
     }
     setShowQuantModal(true);
@@ -564,7 +585,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error: any) {
-      alert(`${t('training.downloadFailed')}: ${error.message}`);
+      showError(`${t('training.downloadFailed')}: ${error.message}`);
     }
   };
 
@@ -623,7 +644,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
     } catch (error: any) {
       console.error('[Test] Error:', error);
       const errorMessage = error.message || 'Unknown error';
-      alert(`${t('training.test.failed')}: ${errorMessage}`);
+      showError(`${t('training.test.failed')}: ${errorMessage}`);
       // Even if error occurs, reset state to allow retry
       setTestResults(null);
     } finally {
@@ -754,7 +775,7 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                           className="btn-export-model"
                           onClick={handleQuantModel}
                         >
-                          <IoDownload /> {t('training.quantizeModel')}
+                        <IoDownload /> {t('training.quantizeModel')}
                         </Button>
                       </div>
                     )}
@@ -922,12 +943,12 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                 <h3>{t('training.newTrainingTask')}</h3>
               </DialogTitle>
               <DialogClose className="close-btn" onClick={() => setShowConfigModal(false)} disabled={isLoading}>
-                <IoClose />
+                  <IoClose />
               </DialogClose>
             </DialogHeader>
-            
+              
             <DialogBody className="config-modal-content">
-              <div className="form-container grid-layout">
+                <div className="form-container grid-layout">
                 <div className="form-item config-item">
                   <label className="required">{t('training.modelType')}</label>
                   <Select
@@ -1559,16 +1580,16 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         disabled={isLoading}
                       />
                     </div>
-              </div>
+                </div>
             </DialogBody>
 
             <DialogFooter className="config-modal-actions">
               <Button
-                className="btn-start-training"
-                onClick={handleStartTraining}
-                disabled={isLoading}
-              >
-                {isLoading ? t('common.loading') : t('training.startTraining')}
+                  className="btn-start-training"
+                  onClick={handleStartTraining}
+                  disabled={isLoading}
+                >
+                  {isLoading ? t('common.loading') : t('training.startTraining')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1582,13 +1603,13 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                 <h3>{t('training.test.title')}</h3>
               </DialogTitle>
               <DialogClose className="close-btn" onClick={() => setShowTestModal(false)} disabled={isTesting}>
-                <IoClose />
+                  <IoClose />
               </DialogClose>
             </DialogHeader>
-            
+              
             <DialogBody className="config-modal-content">
-              <div className="test-modal-body">
-                <div className="test-left">
+                <div className="test-modal-body">
+                  <div className="test-left">
                     <div className="test-upload-section">
                       <label className="test-upload-label">
                         <input
@@ -1644,49 +1665,49 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     </div>
                   </div>
 
-                <div className="test-right">
-                  {testResults ? (
-                    <>
-                      {testResults.annotated_image && (
-                        <div className="test-result-image">
-                          <img src={testResults.annotated_image} alt={t('training.test.detectionResult')} />
-                        </div>
-                      )}
-                      <div className="test-detections-list">
-                        <div className="config-item">
-                          <label>{t('training.test.details')}</label>
-                          {testResults.detections && testResults.detections.length > 0 ? (
-                            <div className="detection-list-container">
-                              {testResults.detections.map((det: any, index: number) => (
-                                <div key={index} className="detection-item">
-                                  <span className="detection-class">{det.class_name}</span>
+                  <div className="test-right">
+                    {testResults ? (
+                      <>
+                        {testResults.annotated_image && (
+                          <div className="test-result-image">
+                            <img src={testResults.annotated_image} alt={t('training.test.detectionResult')} />
+                          </div>
+                        )}
+                          <div className="test-detections-list">
+                            <div className="config-item">
+                            <label>{t('training.test.details')}</label>
+                            {testResults.detections && testResults.detections.length > 0 ? (
+                              <div className="detection-list-container">
+                                {testResults.detections.map((det: any, index: number) => (
+                                  <div key={index} className="detection-item">
+                                    <span className="detection-class">{det.class_name}</span>
                                   <span className="detection-confidence">
                                     {t('training.test.confidence')}: {(det.confidence * 100).toFixed(2)}%
                                   </span>
-                                  <span className="detection-bbox">
-                                    [{det.bbox.x1.toFixed(0)}, {det.bbox.y1.toFixed(0)}, {det.bbox.x2.toFixed(0)}, {det.bbox.y2.toFixed(0)}]
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="detection-list-container">
-                              <div className="detection-item no-detections">
-                                <span>{t('training.test.noDetections', '未检测到任何目标')}</span>
+                                    <span className="detection-bbox">
+                                      [{det.bbox.x1.toFixed(0)}, {det.bbox.y1.toFixed(0)}, {det.bbox.x2.toFixed(0)}, {det.bbox.y2.toFixed(0)}]
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
+                            ) : (
+                              <div className="detection-list-container">
+                                <div className="detection-item no-detections">
+                                  <span>{t('training.test.noDetections', '未检测到任何目标')}</span>
                             </div>
-                          )}
+                          </div>
+                        )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="test-results-section placeholder">
+                        <h4>{t('training.test.results')}</h4>
+                        <div className="test-results-info">
+                          <p>{t('training.test.uploadHint')}</p>
                         </div>
                       </div>
-                    </>
-                  ) : (
-                    <div className="test-results-section placeholder">
-                      <h4>{t('training.test.results')}</h4>
-                      <div className="test-results-info">
-                        <p>{t('training.test.uploadHint')}</p>
-                      </div>
-                    </div>
-                  )}
+                    )}
                 </div>
               </div>
 
@@ -1711,7 +1732,18 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
               setShowQuantModal(true);
               return;
             }
-            if (isQuanting && !window.confirm(t('quantization.confirmClose'))) {
+            if (isQuanting) {
+              setPendingQuantClose(() => () => {
+                if (quantTimeoutRef.current) {
+                  clearTimeout(quantTimeoutRef.current);
+                  quantTimeoutRef.current = null;
+                }
+                setShowQuantModal(false);
+                setQuantProgress('');
+                setQuantStartTime(null);
+                setQuantElapsedTime(0);
+                setQuantResult(null);
+              });
               return;
             }
             if (quantTimeoutRef.current) {
@@ -1731,35 +1763,46 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                 <h3>{t('quantization.title')}</h3>
               </DialogTitle>
               <DialogClose
-                className="close-btn"
-                onClick={() => {
-                  if (isQuanting && !window.confirm(t('quantization.confirmClose'))) {
-                    return;
-                  }
-                  if (quantTimeoutRef.current) {
-                    clearTimeout(quantTimeoutRef.current);
-                    quantTimeoutRef.current = null;
-                  }
-                  setShowQuantModal(false);
-                  setQuantProgress('');
-                  setQuantStartTime(null);
-                  setQuantElapsedTime(0);
-                  setQuantResult(null);
-                }}
+                  className="close-btn" 
+                  onClick={() => {
+                    if (isQuanting) {
+                      setPendingQuantClose(() => () => {
+                        if (quantTimeoutRef.current) {
+                          clearTimeout(quantTimeoutRef.current);
+                          quantTimeoutRef.current = null;
+                        }
+                        setShowQuantModal(false);
+                        setQuantProgress('');
+                        setQuantStartTime(null);
+                        setQuantElapsedTime(0);
+                        setQuantResult(null);
+                      });
+                      return;
+                    }
+                    if (quantTimeoutRef.current) {
+                      clearTimeout(quantTimeoutRef.current);
+                      quantTimeoutRef.current = null;
+                    }
+                    setShowQuantModal(false);
+                    setQuantProgress('');
+                    setQuantStartTime(null);
+                    setQuantElapsedTime(0);
+                    setQuantResult(null);
+                  }}
                 disabled={isQuanting}
-              >
-                <IoClose />
+                >
+                  <IoClose />
               </DialogClose>
             </DialogHeader>
-            
+              
             <DialogBody className="config-modal-content">
               {/* 表单：未开始量化且无结果时显示 */}
-              {!isQuanting && !quantResult && (
-                <>
-                  <div className="config-item">
-                    <label>{t('quantization.inputSize')}</label>
+                {!isQuanting && !quantResult && (
+                  <>
+                <div className="config-item">
+                      <label>{t('quantization.inputSize')}</label>
                     <Input
-                      type="number"
+                    type="number"
                       min={32}
                       max={2048}
                       step={32}
@@ -1773,37 +1816,37 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                       }}
                       onFocus={() => setQuantImgSzInput(quantImgSz.toString())}
                       disabled={isQuanting}
+                  />
+                </div>
+
+                <div className="config-item checkbox-row">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={quantInt8}
+                      onChange={(e) => setQuantInt8(e.target.checked)}
+                        disabled={isQuanting}
                     />
-                  </div>
+                        <span>{t('quantization.useInt8')}</span>
+                  </label>
+                </div>
 
-                  <div className="config-item checkbox-row">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={quantInt8}
-                        onChange={(e) => setQuantInt8(e.target.checked)}
+                <div className="config-item checkbox-row">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={quantNe301}
+                      onChange={(e) => setQuantNe301(e.target.checked)}
                         disabled={isQuanting}
-                      />
-                      <span>{t('quantization.useInt8')}</span>
-                    </label>
-                  </div>
+                    />
+                        <span>{t('quantization.ne301Device')}</span>
+                  </label>
+                </div>
 
-                  <div className="config-item checkbox-row">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={quantNe301}
-                        onChange={(e) => setQuantNe301(e.target.checked)}
-                        disabled={isQuanting}
-                      />
-                      <span>{t('quantization.ne301Device')}</span>
-                    </label>
-                  </div>
-
-                  <div className="config-item">
-                    <label>{t('quantization.calibFraction')}</label>
+                <div className="config-item">
+                      <label>{t('quantization.calibFraction')}</label>
                     <Input
-                      type="number"
+                    type="number"
                       step={0.05}
                       min={0}
                       max={1}
@@ -1814,134 +1857,134 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         const clamped = isNaN(num) ? 0.2 : Math.min(1, Math.max(0, num));
                         setQuantFraction(clamped);
                         setQuantFractionInput(clamped.toString());
-                      }}
+                    }}
                       onFocus={() => setQuantFractionInput(quantFraction.toString())}
                       disabled={isQuanting}
-                    />
-                  </div>
-                </>
-              )}
+                  />
+                </div>
+                  </>
+                )}
 
               {/* 量化进行中 */}
-              {isQuanting && (
-                <div className="quant-progress-section">
-                  <div className="quant-progress-header">
-                    <div className="quant-progress-spinner"></div>
-                    <span className="quant-progress-text">{t('quantization.inProgress')}</span>
-                  </div>
-                  {quantProgress && (
-                    <div className="quant-progress-message">
-                      {quantProgress}
+                {isQuanting && (
+                  <div className="quant-progress-section">
+                    <div className="quant-progress-header">
+                      <div className="quant-progress-spinner"></div>
+                      <span className="quant-progress-text">{t('quantization.inProgress')}</span>
                     </div>
-                  )}
-                  {quantStartTime && (
-                    <div className="quant-progress-time">
-                      {t('quantization.elapsedTime')}: {quantElapsedTime} {t('quantization.seconds')}
+                    {quantProgress && (
+                      <div className="quant-progress-message">
+                        {quantProgress}
+                      </div>
+                    )}
+                    {quantStartTime && (
+                      <div className="quant-progress-time">
+                        {t('quantization.elapsedTime')}: {quantElapsedTime} {t('quantization.seconds')}
+                      </div>
+                    )}
+                    <div className="quant-progress-hint">
+                      <p>{t('quantization.stepsDesc', '量化过程可能需要几分钟时间，包括：')}</p>
+                      <ul>
+                        <li>{t('quantization.steps.tflite')}</li>
+                        {quantNe301 && (
+                          <>
+                            <li>{t('quantization.steps.json')}</li>
+                            <li>{t('quantization.steps.compile')}</li>
+                          </>
+                        )}
+                      </ul>
                     </div>
-                  )}
-                  <div className="quant-progress-hint">
-                    <p>{t('quantization.stepsDesc', '量化过程可能需要几分钟时间，包括：')}</p>
-                    <ul>
-                      <li>{t('quantization.steps.tflite')}</li>
-                      {quantNe301 && (
-                        <>
-                          <li>{t('quantization.steps.json')}</li>
-                          <li>{t('quantization.steps.compile')}</li>
-                        </>
-                      )}
-                    </ul>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* 量化结果 */}
-              {quantResult && !isQuanting && (
-                <div className="quant-result">
-                  <div className="quant-result-message">
-                    <strong>{t('quantization.result')}:</strong> {quantResult.message || t('common.success')}
-                  </div>
-                  {quantResult.params && (
-                    <div className="quant-result-params">
-                      {t('quantization.params')}: imgsz={quantResult.params.imgsz}, int8={String(quantResult.params.int8)}, fraction={quantResult.params.fraction}
+                {quantResult && !isQuanting && (
+                  <div className="quant-result">
+                    <div className="quant-result-message">
+                      <strong>{t('quantization.result')}:</strong> {quantResult.message || t('common.success')}
                     </div>
-                  )}
-                  <div className="quant-files-list">
-                    {quantResult.tflite_path && (
-                      <div className="quant-file-item">
-                        <div className="quant-file-info">
-                          <div className="quant-file-label">{t('quantization.files.tflite')}</div>
-                          <div className="quant-file-name">{quantResult.tflite_path.split('/').pop()}</div>
-                        </div>
+                    {quantResult.params && (
+                      <div className="quant-result-params">
+                        {t('quantization.params')}: imgsz={quantResult.params.imgsz}, int8={String(quantResult.params.int8)}, fraction={quantResult.params.fraction}
+                      </div>
+                    )}
+                    <div className="quant-files-list">
+                      {quantResult.tflite_path && (
+                        <div className="quant-file-item">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">{t('quantization.files.tflite')}</div>
+                            <div className="quant-file-name">{quantResult.tflite_path.split('/').pop()}</div>
+                          </div>
                         <Button
                           type="button"
                           variant="secondary"
                           size="sm"
-                          className="btn-download-file"
-                          onClick={() => handleDownloadExportFile('tflite')}
-                        >
-                          <IoDownload /> {t('quantization.download')}
+                            className="btn-download-file"
+                            onClick={() => handleDownloadExportFile('tflite')}
+                          >
+                            <IoDownload /> {t('quantization.download')}
                         </Button>
-                      </div>
-                    )}
-                    {quantResult.ne301_tflite && (
-                      <div className="quant-file-item">
-                        <div className="quant-file-info">
-                          <div className="quant-file-label">{t('quantization.files.ne301Tflite')}</div>
-                          <div className="quant-file-name">{quantResult.ne301_tflite.split('/').pop()}</div>
                         </div>
+                      )}
+                      {quantResult.ne301_tflite && (
+                        <div className="quant-file-item">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">{t('quantization.files.ne301Tflite')}</div>
+                            <div className="quant-file-name">{quantResult.ne301_tflite.split('/').pop()}</div>
+                          </div>
                         <Button
                           type="button"
                           variant="secondary"
                           size="sm"
-                          className="btn-download-file"
-                          onClick={() => handleDownloadExportFile('ne301_tflite')}
-                        >
-                          <IoDownload /> {t('quantization.download')}
+                            className="btn-download-file"
+                            onClick={() => handleDownloadExportFile('ne301_tflite')}
+                          >
+                            <IoDownload /> {t('quantization.download')}
                         </Button>
-                      </div>
-                    )}
-                    {quantResult.ne301_json && (
-                      <div className="quant-file-item">
-                        <div className="quant-file-info">
-                          <div className="quant-file-label">{t('quantization.files.ne301Json')}</div>
-                          <div className="quant-file-name">{quantResult.ne301_json.split('/').pop()}</div>
                         </div>
+                      )}
+                      {quantResult.ne301_json && (
+                        <div className="quant-file-item">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">{t('quantization.files.ne301Json')}</div>
+                            <div className="quant-file-name">{quantResult.ne301_json.split('/').pop()}</div>
+                          </div>
                         <Button
                           type="button"
                           variant="secondary"
                           size="sm"
-                          className="btn-download-file"
-                          onClick={() => handleDownloadExportFile('ne301_json')}
-                        >
-                          <IoDownload /> {t('quantization.download')}
+                            className="btn-download-file"
+                            onClick={() => handleDownloadExportFile('ne301_json')}
+                          >
+                            <IoDownload /> {t('quantization.download')}
                         </Button>
-                      </div>
-                    )}
-                    {quantResult.ne301_model_bin && (
-                      <div className="quant-file-item model-package">
-                        <div className="quant-file-info">
-                          <div className="quant-file-label">{t('quantization.files.ne301Bin')}</div>
-                          <div className="quant-file-name">{quantResult.ne301_model_bin.split('/').pop()}</div>
                         </div>
+                      )}
+                      {quantResult.ne301_model_bin && (
+                        <div className="quant-file-item model-package">
+                          <div className="quant-file-info">
+                            <div className="quant-file-label">{t('quantization.files.ne301Bin')}</div>
+                            <div className="quant-file-name">{quantResult.ne301_model_bin.split('/').pop()}</div>
+                          </div>
                         <Button
                           type="button"
                           variant="primary"
                           size="sm"
-                          className="btn-download-file model-package"
-                          onClick={() => handleDownloadExportFile('ne301_model_bin')}
-                        >
-                          <IoDownload /> {t('training.quantization.downloadPackage')}
+                            className="btn-download-file model-package"
+                            onClick={() => handleDownloadExportFile('ne301_model_bin')}
+                          >
+                            <IoDownload /> {t('training.quantization.downloadPackage')}
                         </Button>
-                      </div>
-                    )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
             </DialogBody>
 
             <DialogFooter className="config-modal-actions">
               {/* 未开始或无结果时显示“开始量化” */}
-              {!isQuanting && !quantResult && (
+                {!isQuanting && !quantResult && (
                 <Button
                   className="btn-start-training"
                   onClick={async () => {
@@ -1952,11 +1995,11 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                     const startTime = Date.now();
                     setQuantStartTime(startTime);
                     setQuantElapsedTime(0);
-
+                    
                     if (quantTimeoutRef.current) {
                       clearTimeout(quantTimeoutRef.current);
                     }
-
+                    
                     const progressSteps = [
                       { delay: 3000, message: t('quantization.loadingModel') },
                       { delay: 8000, message: t('quantization.quantizing') },
@@ -1972,32 +2015,32 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         setQuantProgress(message);
                       }, delay);
                     });
-
+                    
                     try {
                       const response = await fetch(
                         `${API_BASE_URL}/projects/${projectId}/train/${selectedTrainingId}/export/tflite?imgsz=${quantImgSz}&int8=${quantInt8}&fraction=${quantFraction}&ne301=${quantNe301}`,
                         { method: 'POST' }
                       );
-
+                      
                       if (quantTimeoutRef.current) {
                         clearTimeout(quantTimeoutRef.current);
                         quantTimeoutRef.current = null;
                       }
-
+                      
                       if (!response.ok) {
                         const err = await response.json();
                         throw new Error(err.detail || t('quantization.failed'));
                       }
-
+                      
                       const data = await response.json();
                       setQuantResult(data);
-
+                      
                       const finalElapsedTime = quantElapsedTime || (quantStartTime ? Math.floor((Date.now() - quantStartTime) / 1000) : 0);
                       const minutes = Math.floor(finalElapsedTime / 60);
                       const seconds = finalElapsedTime % 60;
                       const timeStr = minutes > 0 ? `${minutes}${t('quantization.minutes', '分')}${seconds}${t('quantization.seconds')}` : `${seconds}${t('quantization.seconds')}`;
                       setQuantProgress(`${t('quantization.success')}: ${timeStr}`);
-
+                      
                       setTimeout(() => {
                         setQuantProgress('');
                       }, 100);
@@ -2006,12 +2049,12 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                         clearTimeout(quantTimeoutRef.current);
                         quantTimeoutRef.current = null;
                       }
-
+                      
                       const errorMessage = error.message || 'Unknown error';
                       setQuantProgress(`✗ ${t('quantization.failed')}: ${errorMessage}`);
-
+                      
                       setTimeout(() => {
-                        alert(`${t('quantization.failed')}: ${errorMessage}`);
+                        showError(`${t('quantization.failed')}: ${errorMessage}`);
                       }, 500);
                     } finally {
                       setIsQuanting(false);
@@ -2022,25 +2065,73 @@ export const TrainingPanel: React.FC<TrainingPanelProps> = ({ projectId, onClose
                 >
                   {t('training.quantization.startQuantize')}
                 </Button>
-              )}
-
+                )}
+                
               {/* 量化完成后显示重新量化 */}
-              {quantResult && !isQuanting && (
+                {quantResult && !isQuanting && (
                 <Button
-                  className="btn-start-training"
-                  onClick={() => {
-                    setQuantResult(null);
-                    setQuantProgress('');
-                    setQuantElapsedTime(0);
-                    setQuantStartTime(null);
-                  }}
-                >
-                  {t('quantization.reQuantize')}
+                    className="btn-start-training"
+                    onClick={() => {
+                      setQuantResult(null);
+                      setQuantProgress('');
+                      setQuantElapsedTime(0);
+                      setQuantStartTime(null);
+                    }}
+                  >
+                    {t('quantization.reQuantize')}
                 </Button>
-              )}
+                )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Alert Dialog */}
+        <Alert
+          open={alertState.open}
+          onOpenChange={closeAlert}
+          title={alertState.title}
+          message={alertState.message}
+          type={alertState.type}
+          confirmText={alertState.confirmText || t('common.confirm', '确定')}
+          onConfirm={alertState.onConfirm}
+        />
+
+        {/* Confirm Dialog */}
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={closeConfirm}
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmText={confirmState.confirmText}
+          cancelText={confirmState.cancelText}
+          onConfirm={confirmState.onConfirm || (() => {})}
+          onCancel={confirmState.onCancel}
+          variant={confirmState.variant}
+        />
+
+        {/* Quantization Close Confirm Dialog */}
+        {pendingQuantClose && (
+          <ConfirmDialog
+            open={!!pendingQuantClose}
+            onOpenChange={(open) => {
+              if (!open) {
+                setPendingQuantClose(null);
+              }
+            }}
+            title={t('common.confirm', '确认')}
+            message={t('quantization.confirmClose', '量化正在进行中，确定要关闭窗口吗？关闭后您将无法看到进度，但后台处理会继续。')}
+            onConfirm={() => {
+              if (pendingQuantClose) {
+                pendingQuantClose();
+                setPendingQuantClose(null);
+              }
+            }}
+            onCancel={() => {
+              setPendingQuantClose(null);
+            }}
+            variant="warning"
+          />
+        )}
       </div>
     </div>
   );
