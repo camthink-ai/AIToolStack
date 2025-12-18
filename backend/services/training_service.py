@@ -838,7 +838,7 @@ class TrainingService:
                                         record['end_time'] = datetime.now().isoformat()
                                     record_for_db = record
                                 break
-                    
+                
                     # Sync to database
                     if record_for_db:
                         try:

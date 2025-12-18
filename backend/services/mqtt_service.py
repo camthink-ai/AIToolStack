@@ -2,9 +2,12 @@
 import json
 import base64
 import uuid
+import logging
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+from collections import deque
 import paho.mqtt.client as mqtt
 from PIL import Image as PILImage
 import io
@@ -13,6 +16,8 @@ from backend.config import settings
 from backend.models.database import SessionLocal, Image, Project
 from backend.services.websocket_manager import websocket_manager
 from backend.services.mqtt_broker import builtin_mqtt_broker
+
+logger = logging.getLogger(__name__)
 
 
 class MQTTService:
@@ -23,25 +28,61 @@ class MQTTService:
         self.is_connected = False
         self.broker_host = ""  # Save current connected broker address
         self.broker_port = 0
+        
+        # Connection statistics and monitoring
+        self.connection_count = 0
+        self.disconnection_count = 0
+        self.last_connect_time: Optional[float] = None
+        self.last_disconnect_time: Optional[float] = None
+        self.recent_errors = deque(maxlen=10)  # Keep last 10 errors
+        self.message_count = 0
+        self.last_message_time: Optional[float] = None
     
     def on_connect(self, client, userdata, flags, rc):
         """Connection callback"""
         if rc == 0:
             self.is_connected = True
-            print(f"[MQTT] Connected to broker at {self.broker_host}:{self.broker_port}")
+            self.connection_count += 1
+            self.last_connect_time = time.time()
+            logger.info(f"Connected to broker at {self.broker_host}:{self.broker_port}")
             # Subscribe to upload topic
-            client.subscribe(settings.MQTT_UPLOAD_TOPIC, qos=settings.MQTT_QOS)
-            print(f"[MQTT] Subscribed to topic: {settings.MQTT_UPLOAD_TOPIC}")
+            try:
+                result = client.subscribe(settings.MQTT_UPLOAD_TOPIC, qos=settings.MQTT_QOS)
+                if result[0] == mqtt.MQTT_ERR_SUCCESS:
+                    logger.info(f"Subscribed to topic: {settings.MQTT_UPLOAD_TOPIC}")
+                else:
+                    logger.error(f"Failed to subscribe to topic {settings.MQTT_UPLOAD_TOPIC}: error code {result[0]}")
+            except Exception as e:
+                logger.error(f"Error subscribing to topic: {e}")
         else:
-            print(f"[MQTT] Connection failed with code {rc}")
+            error_msg = self._get_connection_error_message(rc)
+            logger.error(f"Connection failed with code {rc}: {error_msg}")
+            self.recent_errors.append({
+                'time': time.time(),
+                'type': 'connect_error',
+                'code': rc,
+                'message': error_msg
+            })
     
     def on_disconnect(self, client, userdata, rc):
         """Disconnect callback"""
         self.is_connected = False
+        self.disconnection_count += 1
+        self.last_disconnect_time = time.time()
+        
         if rc != 0:
-            print(f"[MQTT] Disconnected from broker unexpectedly (rc={rc})")
+            # Abnormal disconnect - paho-mqtt will automatically try to reconnect
+            error_msg = self._get_disconnect_error_message(rc)
+            logger.warning(f"Disconnected from broker unexpectedly (rc={rc}): {error_msg}")
+            self.recent_errors.append({
+                'time': time.time(),
+                'type': 'disconnect_error',
+                'code': rc,
+                'message': error_msg
+            })
         else:
-            print(f"[MQTT] Disconnected from broker")
+            # Normal disconnect
+            logger.info("Disconnected from broker normally")
         
         # If abnormal disconnect (rc != 0), paho-mqtt will automatically try to reconnect
         # We don't need to manually handle reconnection logic
@@ -49,6 +90,9 @@ class MQTTService:
     def on_message(self, client, userdata, msg):
         """Message receive callback"""
         try:
+            self.message_count += 1
+            self.last_message_time = time.time()
+            
             topic = msg.topic
             payload = msg.payload.decode('utf-8')
             
@@ -56,25 +100,40 @@ class MQTTService:
             # Topic format: annotator/upload/{project_id}
             parts = topic.split('/')
             if len(parts) < 3:
-                print(f"[MQTT] Invalid topic format: {topic}")
+                logger.warning(f"Invalid topic format: {topic}")
                 return
             
             project_id = parts[2]
             
             # Parse JSON payload
-            data = json.loads(payload)
+            try:
+                data = json.loads(payload)
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error for topic {topic}: {e}")
+                # Try to extract req_id and device_id from raw payload
+                req_id = ''
+                device_id = ''
+                try:
+                    temp_data = json.loads(payload)  # This will fail, but we try
+                except:
+                    pass
+                self._send_error_response(req_id, device_id, "Invalid JSON format")
+                return
             
             # Handle image upload
             self._handle_image_upload(project_id, data, topic)
             
-        except json.JSONDecodeError as e:
-            print(f"[MQTT] JSON decode error: {e}")
-            self._send_error_response(data.get('req_id', ''), data.get('device_id', ''), 
-                                     "Invalid JSON format")
         except Exception as e:
-            print(f"[MQTT] Error processing message: {e}")
-            self._send_error_response(data.get('req_id', ''), data.get('device_id', ''), 
-                                     str(e))
+            logger.error(f"Error processing message: {e}", exc_info=True)
+            req_id = ''
+            device_id = ''
+            try:
+                data = json.loads(msg.payload.decode('utf-8'))
+                req_id = data.get('req_id', '')
+                device_id = data.get('device_id', '')
+            except:
+                pass
+            self._send_error_response(req_id, device_id, str(e))
     
     def _handle_image_upload(self, project_id: str, data: dict, topic: str):
         """Handle image upload"""
@@ -128,7 +187,7 @@ class MQTTService:
             project = db.query(Project).filter(Project.id == project_id).first()
             if not project:
                 error_msg = f"Project {project_id} not found"
-                print(f"[MQTT] {error_msg}")
+                logger.warning(error_msg)
                 self._send_error_response(req_id, device_id, error_msg)
                 return
             
@@ -209,25 +268,34 @@ class MQTTService:
             db.commit()
             db.refresh(db_image)
             
-            print(f"[MQTT] Image saved: {filename} ({img_width}x{img_height}) to project {project_id}")
+            # Ensure database transaction is fully committed before notifying frontend
+            # This prevents frontend from refreshing before the new image is visible in the database
+            image_id = db_image.id
+            
+            logger.info(f"Image saved: {filename} ({img_width}x{img_height}) to project {project_id}, image_id: {image_id}")
             
             # Send success response
             self._send_success_response(req_id, device_id, project_id)
             
-            # Notify frontend via WebSocket
-            websocket_manager.broadcast_project_update(project_id, {
-                "type": "new_image",
-                "image_id": db_image.id,
-                "filename": filename,
-                "path": relative_path,
-                "width": img_width,
-                "height": img_height
-            })
+            # Notify frontend via WebSocket (after database commit is complete)
+            try:
+                websocket_manager.broadcast_project_update(project_id, {
+                    "type": "new_image",
+                    "image_id": image_id,
+                    "filename": filename,
+                    "path": relative_path,
+                    "width": img_width,
+                    "height": img_height
+                })
+                logger.debug(f"WebSocket notification sent for new image {image_id} in project {project_id}")
+            except Exception as ws_error:
+                logger.error(f"Failed to send WebSocket notification for new image: {ws_error}", exc_info=True)
+                # Don't fail the whole operation if WebSocket notification fails
             
         except Exception as e:
             db.rollback()
             error_msg = f"Failed to save image: {str(e)}"
-            print(f"[MQTT] {error_msg}")
+            logger.error(error_msg, exc_info=True)
             self._send_error_response(req_id, device_id, error_msg)
         finally:
             db.close()
@@ -235,6 +303,10 @@ class MQTTService:
     def _send_success_response(self, req_id: str, device_id: str, project_id: str):
         """Send success response"""
         if not device_id or device_id == 'unknown':
+            return
+        
+        if not self.client or not self.is_connected:
+            logger.warning(f"Cannot send success response: client not connected")
             return
         
         response_topic = f"{settings.MQTT_RESPONSE_TOPIC_PREFIX}/{device_id}"
@@ -246,11 +318,20 @@ class MQTTService:
             "server_time": int(datetime.utcnow().timestamp())
         }
         
-        self.client.publish(response_topic, json.dumps(response), qos=settings.MQTT_QOS)
+        try:
+            result = self.client.publish(response_topic, json.dumps(response), qos=settings.MQTT_QOS)
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                logger.warning(f"Failed to publish success response: error code {result.rc}")
+        except Exception as e:
+            logger.error(f"Error publishing success response: {e}")
     
     def _send_error_response(self, req_id: str, device_id: str, error_message: str):
         """Send error response"""
         if not device_id or device_id == 'unknown':
+            return
+        
+        if not self.client or not self.is_connected:
+            logger.warning(f"Cannot send error response: client not connected")
             return
         
         response_topic = f"{settings.MQTT_RESPONSE_TOPIC_PREFIX}/{device_id}"
@@ -262,12 +343,55 @@ class MQTTService:
             "server_time": int(datetime.utcnow().timestamp())
         }
         
-        self.client.publish(response_topic, json.dumps(response), qos=settings.MQTT_QOS)
+        try:
+            result = self.client.publish(response_topic, json.dumps(response), qos=settings.MQTT_QOS)
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                logger.warning(f"Failed to publish error response: error code {result.rc}")
+        except Exception as e:
+            logger.error(f"Error publishing error response: {e}")
+    
+    def _get_connection_error_message(self, rc: int) -> str:
+        """Get human-readable connection error message"""
+        error_messages = {
+            1: "Connection refused - incorrect protocol version",
+            2: "Connection refused - invalid client identifier",
+            3: "Connection refused - server unavailable",
+            4: "Connection refused - bad username or password",
+            5: "Connection refused - not authorized"
+        }
+        return error_messages.get(rc, f"Unknown error code {rc}")
+    
+    def _get_disconnect_error_message(self, rc: int) -> str:
+        """Get human-readable disconnect error message"""
+        # rc values for on_disconnect:
+        # 0 = normal disconnect
+        # Non-zero = unexpected disconnect
+        # Common values: network error, timeout, etc.
+        if rc == 0:
+            return "Normal disconnect"
+        elif rc == 7:
+            return "Network error or timeout - connection may have timed out"
+        else:
+            return f"Unexpected disconnect (error code: {rc})"
+    
+    def get_status(self) -> dict:
+        """Get current MQTT service status"""
+        return {
+            'connected': self.is_connected,
+            'broker': f"{self.broker_host}:{self.broker_port}" if self.broker_host else None,
+            'connection_count': self.connection_count,
+            'disconnection_count': self.disconnection_count,
+            'message_count': self.message_count,
+            'last_connect_time': self.last_connect_time,
+            'last_disconnect_time': self.last_disconnect_time,
+            'last_message_time': self.last_message_time,
+            'recent_errors': list(self.recent_errors)
+        }
     
     def start(self):
         """Start MQTT client"""
         if not settings.MQTT_ENABLED:
-            print("[MQTT] MQTT service is disabled in configuration")
+            logger.info("MQTT service is disabled in configuration")
             return
         
         try:
@@ -294,35 +418,56 @@ class MQTTService:
                 # This is more reliable, avoids connection issues caused by container internal IP
                 self.broker_host = "127.0.0.1"  # Use localhost connection in container
                 self.broker_port = settings.MQTT_BUILTIN_PORT
-                print(f"[MQTT] Using built-in MQTT Broker at {self.broker_host}:{self.broker_port}")
+                logger.info(f"Using built-in MQTT Broker at {self.broker_host}:{self.broker_port}")
             else:
                 self.broker_host = settings.MQTT_BROKER
                 self.broker_port = settings.MQTT_PORT
-                print(f"[MQTT] Connecting to external MQTT Broker at {self.broker_host}:{self.broker_port}")
+                logger.info(f"Connecting to external MQTT Broker at {self.broker_host}:{self.broker_port}")
                 # External Broker requires authentication
                 if settings.MQTT_USERNAME and settings.MQTT_PASSWORD:
                     self.client.username_pw_set(settings.MQTT_USERNAME, settings.MQTT_PASSWORD)
             
             # Connect to Broker
             # Increase keepalive time to reduce timeout disconnection issues
+            # Set connect timeout to avoid hanging
             self.client.connect(self.broker_host, self.broker_port, keepalive=120)
+            logger.info(f"Starting MQTT client loop...")
             self.client.loop_start()
         except ConnectionRefusedError:
+            error_msg = "Connection refused"
             if settings.MQTT_USE_BUILTIN_BROKER:
-                print(f"[MQTT] Connection refused. Built-in broker may not be running.")
+                error_msg += ". Built-in broker may not be running."
             else:
-                print(f"[MQTT] Connection refused. Please check if MQTT broker is running at {settings.MQTT_BROKER}:{settings.MQTT_PORT}")
+                error_msg += f". Please check if MQTT broker is running at {settings.MQTT_BROKER}:{settings.MQTT_PORT}"
+            logger.error(error_msg)
             self.is_connected = False
+            self.recent_errors.append({
+                'time': time.time(),
+                'type': 'connection_refused',
+                'code': None,
+                'message': error_msg
+            })
         except Exception as e:
-            print(f"[MQTT] Failed to connect: {e}")
+            logger.error(f"Failed to connect: {e}", exc_info=True)
             self.is_connected = False
+            self.recent_errors.append({
+                'time': time.time(),
+                'type': 'connection_error',
+                'code': None,
+                'message': str(e)
+            })
     
     def stop(self):
         """Stop MQTT client"""
         if self.client:
-            self.client.loop_stop()
-            self.client.disconnect()
-            self.is_connected = False
+            logger.info("Stopping MQTT client...")
+            try:
+                self.client.loop_stop()
+                self.client.disconnect()
+                self.is_connected = False
+                logger.info("MQTT client stopped")
+            except Exception as e:
+                logger.error(f"Error stopping MQTT client: {e}")
 
 
 # Global MQTT service instance

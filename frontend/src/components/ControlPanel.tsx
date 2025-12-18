@@ -399,7 +399,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           <div className="object-list">
             <h3>{t('annotation.annotations')} ({annotations.length})</h3>
             {annotations.length === 0 ? (
-              <div className="empty-state">{t('common.noData', '暂无数据')}</div>
+              <div className="empty-state">{t('annotation.noData')}</div>
             ) : (
               <div className="annotation-items">
                 {annotations.map((ann) => {
@@ -418,7 +418,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                           style={{ backgroundColor: classObj?.color || '#888' }}
                         />
                         <div className="annotation-info">
-                          <div className="annotation-class">{classObj?.name || '未知'}</div>
+                          <div className="annotation-class">{classObj?.name || t('annotation.unknownClass')}</div>
                           <div className="annotation-type">{ann.type}</div>
                         </div>
                       </div>

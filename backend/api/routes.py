@@ -4006,7 +4006,15 @@ def get_mqtt_status(request: Request):
     # get_mqtt_broker_host already contains logic to get from request headers, use it directly here
     server_ip = get_mqtt_broker_host(request)
     
-    return {
+    # Get detailed status from service if enabled
+    service_status = {}
+    if settings.MQTT_ENABLED:
+        try:
+            service_status = mqtt_service.get_status()
+        except Exception as e:
+            logger.warning(f"Failed to get MQTT service status: {e}")
+    
+    base_status = {
         "enabled": settings.MQTT_ENABLED,
         "use_builtin": settings.MQTT_USE_BUILTIN_BROKER if settings.MQTT_ENABLED else False,
         "broker_type": broker_type if settings.MQTT_ENABLED else None,
@@ -4017,6 +4025,20 @@ def get_mqtt_status(request: Request):
         "server_ip": server_ip,  # Server IP address
         "server_port": settings.PORT  # Server port
     }
+    
+    # Merge service status details
+    if service_status:
+        base_status.update({
+            "connection_count": service_status.get("connection_count", 0),
+            "disconnection_count": service_status.get("disconnection_count", 0),
+            "message_count": service_status.get("message_count", 0),
+            "last_connect_time": service_status.get("last_connect_time"),
+            "last_disconnect_time": service_status.get("last_disconnect_time"),
+            "last_message_time": service_status.get("last_message_time"),
+            "recent_errors": service_status.get("recent_errors", [])
+        })
+    
+    return base_status
 
 
 @router.post("/mqtt/test")

@@ -278,6 +278,7 @@
     "images": "Images",
     "classes": "Classes",
     "annotations": "Annotations",
+    "unknownClass": "Unknown",
     "deleteConfirm": "Are you sure you want to delete this annotation?",
     "create": "Create",
     "noData": "No data",

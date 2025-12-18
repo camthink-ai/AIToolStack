@@ -278,6 +278,7 @@
     "images": "图像",
     "classes": "类别",
     "annotations": "标注",
+    "unknownClass": "未知",
     "deleteConfirm": "确定要删除这个标注吗？",
     "create": "创建",
     "noData": "暂无数据",
