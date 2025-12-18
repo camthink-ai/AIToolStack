@@ -703,7 +703,7 @@ class TrainingService:
             # Handle user interrupt (Ctrl+C)
             error_msg = "Training interrupted by user"
             try:
-            self._add_log(training_id, project_id, f"Training interrupted by user")
+                self._add_log(training_id, project_id, f"Training interrupted by user")
             except Exception as log_error:
                 logger.error(f"[Training] Failed to add error log: {log_error}")
             logger.warning(f"[Training] Training interrupted for project {project_id}, training_id: {training_id}")
@@ -785,10 +785,10 @@ class TrainingService:
                 except Exception as log_error:
                     logger.error(f"[Training] Failed to add error log: {log_error}")
             else:
-            try:
-                self._add_log(training_id, project_id, f"Training failed: {error_msg}")
-            except Exception as log_error:
-                logger.error(f"[Training] Failed to add error log: {log_error}")
+                try:
+                    self._add_log(training_id, project_id, f"Training failed: {error_msg}")
+                except Exception as log_error:
+                    logger.error(f"[Training] Failed to add error log: {log_error}")
             
             logger.error(f"[Training] Training failed for project {project_id}, training_id: {training_id}: {e}", exc_info=True)
             training_success = False
@@ -821,7 +821,7 @@ class TrainingService:
             with self.training_lock:
                 # If training didn't succeed, ensure status is updated to failed (unless stop requested)
                 if not training_success:
-                stop_requested = stop_event.is_set() if stop_event else False
+                    stop_requested = stop_event.is_set() if stop_event else False
                     record_for_db = None
                     # Find corresponding training record
                     if project_id in self.training_records:
@@ -839,20 +839,20 @@ class TrainingService:
                                     record_for_db = record
                                 break
                 
-                # Sync to database
-                if record_for_db:
-                    try:
-                        self._persist_record(record_for_db)
-                        if stop_requested:
+                    # Sync to database
+                    if record_for_db:
+                        try:
+                            self._persist_record(record_for_db)
+                            if stop_requested:
                                 try:
-                            self._add_log(training_id, project_id, "Training stopped by user")
+                                    self._add_log(training_id, project_id, "Training stopped by user")
                                 except Exception:
                                     pass
-                            logger.info(f"[Training] Updated training status to 'stopped' for project {project_id}, training_id: {training_id}")
-                        else:
-                            logger.info(f"[Training] Updated training status to 'failed' for project {project_id}, training_id: {training_id}")
-                    except Exception as persist_error:
-                        logger.error(f"[Training] Failed to persist failed training record: {persist_error}", exc_info=True)
+                                logger.info(f"[Training] Updated training status to 'stopped' for project {project_id}, training_id: {training_id}")
+                            else:
+                                logger.info(f"[Training] Updated training status to 'failed' for project {project_id}, training_id: {training_id}")
+                        except Exception as persist_error:
+                            logger.error(f"[Training] Failed to persist failed training record: {persist_error}", exc_info=True)
                 
                 # Always clear active training marker and thread tracking (even if training succeeded)
                 # This ensures clean state for next training
@@ -1015,7 +1015,7 @@ class TrainingService:
                                 logger.error(f"[Training] Failed to update terminated training status: {e}")
                             # Clear active flag and thread tracking
                             if project_id in self.active_trainings and self.active_trainings[project_id] == training_id:
-                            del self.active_trainings[project_id]
+                                del self.active_trainings[project_id]
                             if training_id in self.training_threads:
                                 del self.training_threads[training_id]
                             if training_id in self.stop_events:

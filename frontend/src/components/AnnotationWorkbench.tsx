@@ -102,10 +102,18 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
     };
   }, [showExportMenu]);
 
-  // Load image list
-  const fetchImages = useCallback(async () => {
+  // Load image list with retry mechanism
+  const fetchImages = useCallback(async (retryCount = 0): Promise<void> => {
+    const maxRetries = 3;
+    const retryDelay = 500; // ms
+    
     try {
       const response = await fetch(`${API_BASE_URL}/projects/${project.id}/images`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       setImages(prevImages => {
@@ -132,7 +140,16 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
         return prevIndex;
       });
     } catch (error) {
-      console.error('Failed to fetch images:', error);
+      console.error(`[Image List] Failed to fetch images (attempt ${retryCount + 1}/${maxRetries + 1}):`, error);
+      
+      // Retry on failure
+      if (retryCount < maxRetries) {
+        console.log(`[Image List] Retrying in ${retryDelay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        return fetchImages(retryCount + 1);
+      } else {
+        console.error('[Image List] Max retries reached, giving up');
+      }
     }
   }, [project.id]);
 
@@ -248,28 +265,40 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   useWebSocket(project.id, useCallback((message: any) => {
     console.log('[WebSocket] Received message:', message);
     
-    const scheduleRefreshImages = () => {
-      // Simple debounce: merge frequent status updates into one refresh
+    const scheduleRefreshImages = (immediate = false) => {
+      // Clear any pending refresh
       if (imageListRefreshTimeoutRef.current !== null) {
         window.clearTimeout(imageListRefreshTimeoutRef.current);
+        imageListRefreshTimeoutRef.current = null;
       }
+      
+      const refreshDelay = immediate ? 0 : 300; // Increased delay to ensure DB commit completes
+      
       imageListRefreshTimeoutRef.current = window.setTimeout(() => {
         fetchImages()
           .then(() => {
-            console.log('[WebSocket] Image list refreshed');
+            console.log('[WebSocket] Image list refreshed successfully');
           })
           .catch(error => {
             console.error('[WebSocket] Failed to refresh image list:', error);
+            // Try once more after a short delay if first attempt fails
+            setTimeout(() => {
+              fetchImages().catch(err => {
+                console.error('[WebSocket] Retry refresh also failed:', err);
+              });
+            }, 1000);
           })
           .finally(() => {
             imageListRefreshTimeoutRef.current = null;
           });
-      }, 200);
+      }, refreshDelay);
     };
 
     if (message.type === 'new_image') {
       console.log('[WebSocket] New image notification received:', message);
-      scheduleRefreshImages();
+      // Schedule refresh with a small delay to ensure database commit is complete
+      // For new images, we want to refresh even if user is currently viewing an image
+      scheduleRefreshImages(false);
     } else if (message.type === 'image_status_updated') {
       // Image status updated (annotation create/delete causes status change)
       console.log('[WebSocket] Image status updated:', message);
@@ -296,6 +325,25 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
     fetchClasses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id]);
+
+  // Periodic refresh as backup in case WebSocket messages are missed
+  // This ensures images are refreshed even if WebSocket connection has issues
+  useEffect(() => {
+    // Only poll if project is active and we have a valid project ID
+    if (!project.id) return;
+
+    const pollInterval = 10000; // Poll every 10 seconds as backup
+    const intervalId = setInterval(() => {
+      // Silently refresh image list to catch any missed updates
+      fetchImages().catch(error => {
+        console.error('[Image List] Periodic refresh failed:', error);
+      });
+    }, pollInterval);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [project.id, fetchImages]);
 
   useEffect(() => {
     // Only re-load annotations when the current image index changes,
