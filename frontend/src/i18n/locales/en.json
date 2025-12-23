@@ -746,17 +746,39 @@
     "configuredBrokers": "{{total}} external Brokers configured ({{enabled}} enabled)",
     "deviceAccess": {
       "title": "Device Access Information",
-      "subtitle": "Guidance for devices on how to connect to MQTT Broker and backend service.",
-      "brokerAddress": "Broker Address",
-      "brokerType": "Broker Type",
+      "subtitle": "MQTT Broker and topic subscription information required for device connection.",
       "builtinBroker": "Built-in Broker",
       "externalBroker": "External Broker",
-      "uploadTopic": "Upload Topic Template",
-      "responseTopicPrefix": "Response Topic Prefix",
-      "serverAddress": "Backend Service Address",
-      "hintTitle": "Device Access Hint",
-      "hintText": "Devices only need to access the HTTP service above and call /api/device/bootstrap to automatically obtain the same access information, avoiding manual IP and port lookup in the local network.",
-      "loading": "Loading device access information..."
+      "loading": "Loading device access information...",
+      "mqttBroker": {
+        "title": "MQTT Broker Information",
+        "address": "Broker Address",
+        "protocol": "Protocol",
+        "username": "Username",
+        "password": "Password",
+        "caCert": "CA Certificate",
+        "clientCert": "Client Certificate",
+        "clientCertRequired": "Client certificate required (mTLS)",
+        "clientKey": "Client Key",
+        "noBrokerConfigured": "No MQTT Broker configured. Please enable and configure Broker in MQTT Configuration.",
+        "copyPassword": "Copy Password",
+        "downloadCert": "Download Certificate",
+        "downloadKey": "Download Key"
+      },
+      "topics": {
+        "title": "Topic Information",
+        "topic": "Topic",
+        "purpose": "Purpose",
+        "uploadPurpose": "Upload images to projects for annotation.",
+        "reportPurpose": "Device reports information (heartbeat, status, data, etc.).",
+        "commandPurpose": "Server sends control commands to devices (restart, upgrade, execute tasks, etc.)."
+      },
+      "backendService": {
+        "title": "Backend Service Information",
+        "address": "Service Address",
+        "bootstrapApi": "Bootstrap API",
+        "description": "Devices only need to access this HTTP endpoint to automatically obtain MQTT Broker address, port, protocol and other connection information without manual configuration. Suitable for device first-time access or automatic discovery when network environment changes."
+      }
     },
     "tabs": {
       "mqtt": "MQTT Configuration",
@@ -769,6 +791,8 @@
     "edit": "Edit",
     "delete": "Delete",
     "enable": "Enable",
-    "disable": "Disable"
+    "disable": "Disable",
+    "copied": "Copied",
+    "copyFailed": "Copy Failed"
   }
 }

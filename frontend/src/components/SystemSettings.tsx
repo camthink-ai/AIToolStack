@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { IoRefresh, IoCheckmark, IoAdd, IoPencil, IoTrash, IoClose } from 'react-icons/io5';
+import { IoRefresh, IoCheckmark, IoAdd, IoPencil, IoTrash, IoClose, IoCopyOutline, IoDownloadOutline } from 'react-icons/io5';
 import { Switch } from '../ui/Switch';
 import { Input } from '../ui/Input';
 import { Select, SelectItem } from '../ui/Select';
@@ -1024,6 +1024,23 @@ export const SystemSettings: React.FC = () => {
   const { confirmState, showConfirm, closeConfirm } = useConfirm();
   const [showBuiltinPassword, setShowBuiltinPassword] = useState(false);
   const caFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [copiedPassword, setCopiedPassword] = useState<string | null>(null);
+
+  const copyToClipboard = useCallback((text: string, type: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedPassword(type);
+      showSuccess(t('settings.copied'));
+      setTimeout(() => setCopiedPassword(null), 2000);
+    }).catch((err) => {
+      console.error('Failed to copy:', err);
+      showError(t('settings.copyFailed'));
+    });
+  }, [showSuccess, showError, t]);
+
+  const downloadCertificate = useCallback((certType: 'ca' | 'client-cert' | 'client-key', filename?: string) => {
+    const url = `${API_BASE_URL}/system/mqtt/tls/${certType}${filename ? `/${encodeURIComponent(filename)}` : ''}`;
+    window.open(url, '_blank');
+  }, []);
 
   useEffect(() => {
     void refreshAll();
@@ -1889,58 +1906,272 @@ export const SystemSettings: React.FC = () => {
         </div>
 
         <div className="settings-card-body">
-          <div className="settings-form-grid">
-            <div className="settings-form-item">
-              <label className="settings-form-label">{t('settings.deviceAccess.brokerAddress')}</label>
-              <div className="settings-form-control">
-                <code className="settings-code-block">
-                  {bootstrap.protocol}://{bootstrap.broker_host}:{bootstrap.broker_port}
-                </code>
-              </div>
-            </div>
-
-            <div className="settings-form-item">
-              <label className="settings-form-label">{t('settings.deviceAccess.brokerType')}</label>
-              <div className="settings-form-control">
+          {/* MQTT Broker Information */}
+          <h4 className="settings-subsection-title">{t('settings.deviceAccess.mqttBroker.title')}</h4>
+          
+          {/* Built-in Broker */}
+          {config && config.enabled && (
+            <div className="settings-broker-connection-info">
+              <div className="settings-broker-connection-header">
                 <span className="settings-status-badge settings-status-badge-info">
-                  {bootstrap.broker_type === 'builtin' ? t('settings.deviceAccess.builtinBroker') : t('settings.deviceAccess.externalBroker')}
+                  {t('settings.deviceAccess.builtinBroker')}
+                </span>
+                <span className="settings-status-badge settings-status-badge-info">
+                  {config.builtin_protocol.toUpperCase()}
                 </span>
               </div>
-            </div>
-
-            <div className="settings-form-item">
-              <label className="settings-form-label">{t('settings.deviceAccess.uploadTopic')}</label>
-              <div className="settings-form-control">
-                <code className="settings-code-block">{bootstrap.upload_topic_format}</code>
+              <div className="settings-broker-connection-content">
+                <div className="settings-broker-info-row">
+                  <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.address')}:</span>
+                  <code className="settings-code-inline">
+                    {config.builtin_protocol}://{config.builtin_broker_host || bootstrap.broker_host}:{config.builtin_protocol === 'mqtts' ? (config.builtin_tls_port || 8883) : (config.builtin_tcp_port || 1883)}
+                  </code>
+                </div>
+                {!config.builtin_allow_anonymous && config.builtin_username && (
+                  <>
+                    <div className="settings-broker-info-row">
+                      <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.username')}:</span>
+                      <code className="settings-code-inline">{config.builtin_username}</code>
+                    </div>
+                    {config.builtin_password && (
+                      <div className="settings-broker-info-row">
+                        <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.password')}:</span>
+                        <div className="settings-broker-info-value-with-action">
+                          <code className="settings-code-inline">••••••••</code>
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => copyToClipboard(config.builtin_password || '', 'builtin-password')}
+                            title={t('settings.deviceAccess.mqttBroker.copyPassword')}
+                          >
+                            <Icon component={IoCopyOutline} />
+                            {copiedPassword === 'builtin-password' && <span className="settings-action-feedback">{t('settings.copied')}</span>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {config.builtin_tls_enabled && (
+                  <>
+                    {config.builtin_tls_ca_cert_path && (
+                      <div className="settings-broker-info-row">
+                        <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.caCert')}:</span>
+                        <div className="settings-broker-info-value-with-action">
+                          <code className="settings-code-inline">{config.builtin_tls_ca_cert_path}</code>
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => downloadCertificate('ca')}
+                            title={t('settings.deviceAccess.mqttBroker.downloadCert')}
+                          >
+                            <Icon component={IoDownloadOutline} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {config.builtin_tls_require_client_cert && (
+                      <div className="settings-broker-info-row">
+                        <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.clientCert')}:</span>
+                        <div className="settings-broker-info-value-with-action">
+                          <code className="settings-code-inline">{t('settings.deviceAccess.mqttBroker.clientCertRequired')}</code>
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => downloadCertificate('client-cert')}
+                            title={t('settings.deviceAccess.mqttBroker.downloadCert')}
+                          >
+                            <Icon component={IoDownloadOutline} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
+          )}
 
-            <div className="settings-form-item">
-              <label className="settings-form-label">{t('settings.deviceAccess.responseTopicPrefix')}</label>
-              <div className="settings-form-control">
-                <code className="settings-code-block">
-                  {bootstrap.response_topic_prefix}/&#123;device_id&#125;
-                </code>
+          {/* External Brokers */}
+          {externalBrokers.filter(b => b.enabled).map((broker) => (
+            <div key={broker.id} className="settings-broker-connection-info" style={{ marginTop: config && config.enabled ? '8px' : '0' }}>
+              <div className="settings-broker-connection-header">
+                <span className="settings-status-badge settings-status-badge-info">
+                  {t('settings.deviceAccess.externalBroker')}: {broker.name}
+                </span>
+                <span className="settings-status-badge settings-status-badge-info">
+                  {broker.protocol.toUpperCase()}
+                </span>
+              </div>
+              <div className="settings-broker-connection-content">
+                <div className="settings-broker-info-row">
+                  <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.address')}:</span>
+                  <code className="settings-code-inline">
+                    {broker.protocol}://{broker.host}:{broker.port}
+                  </code>
+                </div>
+                {broker.username && (
+                  <>
+                    <div className="settings-broker-info-row">
+                      <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.username')}:</span>
+                      <code className="settings-code-inline">{broker.username}</code>
+                    </div>
+                    {broker.password && (
+                      <div className="settings-broker-info-row">
+                        <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.password')}:</span>
+                        <div className="settings-broker-info-value-with-action">
+                          <code className="settings-code-inline">••••••••</code>
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => copyToClipboard(broker.password || '', `external-password-${broker.id}`)}
+                            title={t('settings.deviceAccess.mqttBroker.copyPassword')}
+                          >
+                            <Icon component={IoCopyOutline} />
+                            {copiedPassword === `external-password-${broker.id}` && <span className="settings-action-feedback">{t('settings.copied')}</span>}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                {broker.tls_enabled && (
+                  <>
+                    {broker.tls_ca_cert_path && (
+                      <div className="settings-broker-info-row">
+                        <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.caCert')}:</span>
+                        <div className="settings-broker-info-value-with-action">
+                          <code className="settings-code-inline">{broker.tls_ca_cert_path}</code>
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => {
+                              const filename = broker.tls_ca_cert_path?.split('/').pop() || '';
+                              if (filename.startsWith('ca-')) {
+                                // External broker CA cert
+                                const name = filename.replace('.crt', '');
+                                window.open(`${API_BASE_URL}/system/mqtt/tls/external/ca/${name}`, '_blank');
+                              } else {
+                                downloadCertificate('ca');
+                              }
+                            }}
+                            title={t('settings.deviceAccess.mqttBroker.downloadCert')}
+                          >
+                            <Icon component={IoDownloadOutline} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {broker.tls_client_cert_path && (
+                      <div className="settings-broker-info-row">
+                        <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.clientCert')}:</span>
+                        <div className="settings-broker-info-value-with-action">
+                          <code className="settings-code-inline">{broker.tls_client_cert_path}</code>
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => {
+                              const filename = broker.tls_client_cert_path?.split('/').pop() || '';
+                              if (filename.startsWith('client-cert-')) {
+                                // External broker client cert
+                                const name = filename.replace('.crt', '');
+                                window.open(`${API_BASE_URL}/system/mqtt/tls/external/client-cert/${name}`, '_blank');
+                              } else if (filename.startsWith('client-')) {
+                                // Device cert (client-{CN}.crt)
+                                const cn = filename.replace('client-', '').replace('.crt', '');
+                                window.open(`${API_BASE_URL}/system/mqtt/tls/device-cert/${encodeURIComponent(cn)}`, '_blank');
+                              } else {
+                                downloadCertificate('client-cert');
+                              }
+                            }}
+                            title={t('settings.deviceAccess.mqttBroker.downloadCert')}
+                          >
+                            <Icon component={IoDownloadOutline} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {broker.tls_client_key_path && (
+                      <div className="settings-broker-info-row">
+                        <span className="settings-broker-info-label">{t('settings.deviceAccess.mqttBroker.clientKey')}:</span>
+                        <div className="settings-broker-info-value-with-action">
+                          <code className="settings-code-inline">{broker.tls_client_key_path}</code>
+                          <button
+                            type="button"
+                            className="settings-action-btn"
+                            onClick={() => {
+                              const filename = broker.tls_client_key_path?.split('/').pop() || '';
+                              if (filename.startsWith('client-key-')) {
+                                // External broker client key
+                                const name = filename.replace('.key', '');
+                                window.open(`${API_BASE_URL}/system/mqtt/tls/external/client-key/${name}`, '_blank');
+                              } else if (filename.startsWith('client-')) {
+                                // Device key (client-{CN}.key)
+                                const cn = filename.replace('client-', '').replace('.key', '');
+                                window.open(`${API_BASE_URL}/system/mqtt/tls/device-key/${encodeURIComponent(cn)}`, '_blank');
+                              } else {
+                                downloadCertificate('client-key');
+                              }
+                            }}
+                            title={t('settings.deviceAccess.mqttBroker.downloadKey')}
+                          >
+                            <Icon component={IoDownloadOutline} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </div>
+          ))}
 
-            <div className="settings-form-item">
-              <label className="settings-form-label">{t('settings.deviceAccess.serverAddress')}</label>
-              <div className="settings-form-control">
-                <code className="settings-code-block">
-                  {bootstrap.server_ip}:{bootstrap.server_port}
-                </code>
+          {(!config || !config.enabled) && externalBrokers.filter(b => b.enabled).length === 0 && (
+            <div className="settings-info-box">
+              <div className="settings-info-icon">ℹ️</div>
+              <div className="settings-info-content">
+                <p className="settings-info-text">{t('settings.deviceAccess.mqttBroker.noBrokerConfigured')}</p>
               </div>
             </div>
-          </div>
+          )}
 
-          <div className="settings-info-box">
-            <div className="settings-info-icon">ℹ️</div>
-            <div className="settings-info-content">
-              <p className="settings-info-title">{t('settings.deviceAccess.hintTitle')}</p>
-              <p className="settings-info-text">
-                {t('settings.deviceAccess.hintText')}
-              </p>
+          <div className="settings-section-divider"></div>
+
+          {/* Topic Information */}
+          <h4 className="settings-subsection-title">{t('settings.deviceAccess.topics.title')}</h4>
+          
+          <div className="settings-device-topics">
+            {/* Image Upload Topic */}
+            <div className="settings-device-topic-item">
+              <div className="settings-device-topic-row">
+                <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.topic')}:</span>
+                <code className="settings-code-inline">annotator/upload/{'{'}project_id{'}'}</code>
+              </div>
+              <div className="settings-device-topic-row">
+                <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.purpose')}:</span>
+                <span>{t('settings.deviceAccess.topics.uploadPurpose')}</span>
+              </div>
+            </div>
+            {/* Device Management Topics */}
+            <div className="settings-device-topic-item">
+              <div className="settings-device-topic-row">
+                <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.topic')}:</span>
+                <code className="settings-code-inline">device/{'{'}device_id{'}'}/report</code>
+              </div>
+              <div className="settings-device-topic-row">
+                <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.purpose')}:</span>
+                <span>{t('settings.deviceAccess.topics.reportPurpose')}</span>
+              </div>
+            </div>
+            <div className="settings-device-topic-item">
+              <div className="settings-device-topic-row">
+                <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.topic')}:</span>
+                <code className="settings-code-inline">device/{'{'}device_id{'}'}/command</code>
+              </div>
+              <div className="settings-device-topic-row">
+                <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.purpose')}:</span>
+                <span>{t('settings.deviceAccess.topics.commandPurpose')}</span>
+              </div>
             </div>
           </div>
         </div>

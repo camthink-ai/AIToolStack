@@ -746,17 +746,39 @@
     "configuredBrokers": "已配置 {{total}} 个外部 Broker（{{enabled}} 个已启用）",
     "deviceAccess": {
       "title": "设备接入信息",
-      "subtitle": "用于指导设备如何连接到 MQTT Broker 和后端服务。",
-      "brokerAddress": "Broker 地址",
-      "brokerType": "Broker 类型",
+      "subtitle": "设备连接所需的 MQTT Broker 和主题订阅信息。",
       "builtinBroker": "内置 Broker",
       "externalBroker": "外部 Broker",
-      "uploadTopic": "上传 Topic 模板",
-      "responseTopicPrefix": "响应 Topic 前缀",
-      "serverAddress": "后端服务地址",
-      "hintTitle": "设备接入提示",
-      "hintText": "设备只需访问上述 HTTP 服务并调用 /api/device/bootstrap，即可自动获取相同的接入信息，避免在本地网络中手工查找 IP 和端口。",
-      "loading": "正在加载设备接入信息..."
+      "loading": "正在加载设备接入信息...",
+      "mqttBroker": {
+        "title": "MQTT Broker 信息",
+        "address": "Broker 地址",
+        "protocol": "协议",
+        "username": "用户名",
+        "password": "密码",
+        "caCert": "CA 证书",
+        "clientCert": "客户端证书",
+        "clientCertRequired": "需要客户端证书（mTLS）",
+        "clientKey": "客户端私钥",
+        "noBrokerConfigured": "未配置 MQTT Broker，请在 MQTT 配置中启用并配置 Broker。",
+        "copyPassword": "复制密码",
+        "downloadCert": "下载证书",
+        "downloadKey": "下载私钥"
+      },
+      "topics": {
+        "title": "主题信息",
+        "topic": "主题",
+        "purpose": "用途",
+        "uploadPurpose": "向项目上传图像进行标注。",
+        "reportPurpose": "设备上报信息（心跳、状态、数据等）。",
+        "commandPurpose": "服务器向设备发送控制命令（重启、升级、执行任务等）。"
+      },
+      "backendService": {
+        "title": "后端服务信息",
+        "address": "服务地址",
+        "bootstrapApi": "Bootstrap API",
+        "description": "设备只需访问此 HTTP 接口，即可自动获取 MQTT Broker 地址、端口、协议等连接信息，无需手动配置。适用于设备首次接入或网络环境变化时的自动发现。"
+      }
     },
     "tabs": {
       "mqtt": "MQTT 配置",
@@ -769,6 +791,8 @@
     "edit": "编辑",
     "delete": "删除",
     "enable": "启用",
-    "disable": "禁用"
+    "disable": "禁用",
+    "copied": "已复制",
+    "copyFailed": "复制失败"
   }
 }

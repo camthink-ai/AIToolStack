@@ -4753,6 +4753,49 @@ def download_device_client_key(common_name: str):
     )
 
 
+@router.get("/system/mqtt/tls/external/{kind}/{filename}")
+def download_external_broker_tls_file(kind: str, filename: str):
+    """Download TLS files for external MQTT brokers.
+    
+    Args:
+        kind: 'ca', 'client-cert', or 'client-key'
+        filename: Filename without extension (e.g., 'ca-1766456884' or 'client-cert-1766456884')
+    """
+    from urllib.parse import unquote
+    
+    kind = kind.lower()
+    if kind not in {"ca", "client-cert", "client-key"}:
+        raise HTTPException(status_code=400, detail="Invalid kind, must be one of: ca, client-cert, client-key")
+    
+    safe_filename = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in unquote(filename))
+    
+    base_dir = Path("/mosquitto/config/certs/external")
+    if kind == "ca":
+        file_path = base_dir / f"{safe_filename}.crt"
+        media_type = "application/x-x509-ca-cert"
+        download_filename = f"mqtt-external-ca-{safe_filename}.crt"
+    elif kind == "client-cert":
+        file_path = base_dir / f"{safe_filename}.crt"
+        media_type = "application/x-x509-user-cert"
+        download_filename = f"mqtt-external-client-{safe_filename}.crt"
+    else:  # client-key
+        file_path = base_dir / f"{safe_filename}.key"
+        media_type = "application/x-pem-file"
+        download_filename = f"mqtt-external-client-{safe_filename}.key"
+    
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found: {file_path.name}"
+        )
+    
+    return FileResponse(
+        str(file_path),
+        media_type=media_type,
+        filename=download_filename,
+    )
+
+
 @router.get("/system/mqtt/tls/device-certificates")
 def list_device_certificates():
     """List all device client certificates (excluding AIToolStack's client.crt)."""

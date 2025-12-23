@@ -231,6 +231,202 @@
   margin-bottom: var(--spacing-xl);
 }
 
+/* Section Divider */
+.settings-section-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: var(--spacing-xl) 0;
+}
+
+/* Section Header */
+.settings-section-header {
+  margin-bottom: var(--spacing-md);
+}
+
+.settings-section-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-xs) 0;
+}
+
+.settings-section-subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Subsection Title (smaller heading for device access page) */
+.settings-subsection-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+/* Broker Connection Info */
+.settings-broker-connection-info {
+  margin-bottom: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.settings-broker-connection-header {
+  margin-bottom: var(--spacing-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.settings-broker-connection-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.settings-broker-info-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  font-size: var(--font-size-sm);
+}
+
+.settings-broker-info-label {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.settings-broker-info-value-with-action {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  flex: 1;
+}
+
+.settings-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  flex-shrink: 0;
+}
+
+.settings-action-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.settings-action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.settings-action-feedback {
+  font-size: var(--font-size-xs);
+  color: var(--success-color);
+  font-weight: var(--font-weight-medium);
+}
+
+/* Device Management Topics */
+.settings-device-topics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.settings-device-topic-item {
+  padding: var(--spacing-md);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.settings-device-topic-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+}
+
+.settings-device-topic-row:last-child {
+  margin-bottom: 0;
+}
+
+.settings-device-topic-label {
+  color: var(--text-secondary);
+  font-weight: var(--font-weight-medium);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.settings-device-topic-item .settings-code-inline {
+  font-size: var(--font-size-sm);
+}
+
+/* Topics Table */
+.settings-topics-table {
+  margin-top: var(--spacing-md);
+  overflow-x: auto;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-base);
+}
+
+.settings-table thead {
+  background: var(--bg-secondary);
+}
+
+.settings-table th {
+  padding: var(--spacing-md);
+  text-align: left;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.settings-table td {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+.settings-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+
+.settings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.settings-code-inline {
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--primary-color);
+}
+
 .settings-section:hover {
   box-shadow: var(--shadow-md);
 }
@@ -322,7 +518,7 @@
 .settings-card-body {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-2xl);
+  gap: var(--spacing-xl);
 }
 
 /* ========== Groups ========== */
@@ -364,6 +560,10 @@
 }
 
 /* ========== Form Items ========== */
+.settings-form-item-full {
+  grid-column: 1 / -1;
+}
+
 .settings-form-item {
   display: flex;
   flex-direction: column;
