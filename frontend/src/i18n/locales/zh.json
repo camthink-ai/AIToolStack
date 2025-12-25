@@ -27,7 +27,8 @@
     "timeSeconds": "秒",
     "timeMinutes": "分钟",
     "timeHours": "小时",
-    "timeDays": "天"
+    "timeDays": "天",
+    "viewAll": "查看全部"
   },
   "device": {
     "detail": {
@@ -467,7 +468,7 @@
   "nav": {
     "dashboard": "工作台",
     "modelTraining": "模型训练",
-    "projects": "AI模型项目管理",
+    "projects": "模型项目",
     "models": "模型空间",
     "devices": "设备管理",
     "settings": "系统设置"
@@ -479,6 +480,35 @@
     "getDevice": "获取NeoEyes NE301 AI Camera 设备",
     "deviceName": "NE301 设备",
     "extension": "更多功能即将推出...",
+    "banner": {
+      "title": "CamThink 端到端AI工具集",
+      "subtitle": "从数据采集、标注、训练到部署的完整工具链，专为CamThink边缘AI设备设计",
+      "createProject": "创建项目",
+      "manageDevice": "设备管理",
+      "feature1": "端到端流程自动化",
+      "feature2": "CamThink设备深度集成",
+      "feature3": "快速模型部署"
+    },
+    "projects": {
+      "title": "项目概览",
+      "annotationProgress": "标注进度",
+      "noProjects": "暂无项目"
+    },
+    "models": {
+      "title": "模型统计",
+      "total": "模型总数",
+      "noModels": "暂无模型",
+      "viewModels": "前往模型空间"
+    },
+    "devices": {
+      "title": "设备统计",
+      "total": "设备总数",
+      "online": "在线",
+      "offline": "离线",
+      "unknown": "未知",
+      "noDevices": "暂无设备",
+      "viewDevices": "前往设备管理"
+    },
     "workflow": {
       "title": "完整工作流程",
       "description": "从设备采集到模型部署的六个关键步骤",

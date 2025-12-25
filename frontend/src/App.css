@@ -72,7 +72,6 @@
   text-align: center;
   padding: 60px 40px;
   background: var(--bg-primary);
-  max-width: 500px;
 }
 
 .empty-state h3 {

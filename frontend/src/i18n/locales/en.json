@@ -27,7 +27,8 @@
     "timeSeconds": "s",
     "timeMinutes": "m",
     "timeHours": "h",
-    "timeDays": "d"
+    "timeDays": "d",
+    "viewAll": "View All"
   },
   "device": {
     "detail": {
@@ -479,6 +480,35 @@
     "getDevice": "Get NeoEyes NE301 AI Camera Device",
     "deviceName": "NE301 Device",
     "extension": "More features coming soon...",
+    "banner": {
+      "title": "CamThink End-to-End AI Toolset",
+      "subtitle": "Complete toolchain from data collection, annotation, training to deployment, designed for CamThink edge AI devices",
+      "createProject": "Create Project",
+      "manageDevice": "Device Management",
+      "feature1": "End-to-end Process Automation",
+      "feature2": "Deep Integration with CamThink Devices",
+      "feature3": "Rapid Model Deployment"
+    },
+    "projects": {
+      "title": "Project Overview",
+      "annotationProgress": "Annotation Progress",
+      "noProjects": "No projects"
+    },
+    "models": {
+      "title": "Model Statistics",
+      "total": "Total Models",
+      "noModels": "No models",
+      "viewModels": "Go to Model Space"
+    },
+    "devices": {
+      "title": "Device Statistics",
+      "total": "Total Devices",
+      "online": "Online",
+      "offline": "Offline",
+      "unknown": "Unknown",
+      "noDevices": "No devices",
+      "viewDevices": "Go to Device Management"
+    },
     "workflow": {
       "title": "Complete Workflow",
       "description": "Six key steps from device data collection to model deployment",

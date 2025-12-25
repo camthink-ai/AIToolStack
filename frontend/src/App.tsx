@@ -31,7 +31,7 @@ function App() {
     // Load project list
     fetchProjects();
     
-    // Listen for navigation events from MQTTGuide
+    // Listen for navigation events
     const handleNavigateToSettings = () => {
       setActiveMenu('settings');
       setSelectedProject(null);
@@ -40,9 +40,47 @@ function App() {
       setTrainingInitialId(null);
     };
     
+    const handleNavigateToProjects = () => {
+      setActiveMenu('projects');
+      setSelectedProject(null);
+      setShowTrainingPanel(false);
+      setTrainingProjectId(null);
+      setTrainingInitialId(null);
+      fetchProjects();
+    };
+    
+    const handleNavigateToModels = () => {
+      setActiveMenu('models');
+      setSelectedProject(null);
+      setShowTrainingPanel(false);
+      setTrainingProjectId(null);
+      setTrainingInitialId(null);
+    };
+    
+    const handleNavigateToDevice = () => {
+      setActiveMenu('device');
+      setSelectedProject(null);
+      setShowTrainingPanel(false);
+      setTrainingProjectId(null);
+      setTrainingInitialId(null);
+    };
+    
+    const handleOpenProject = (e: CustomEvent) => {
+      setSelectedProject(e.detail);
+    };
+    
     window.addEventListener('navigate-to-settings', handleNavigateToSettings);
+    window.addEventListener('navigate-to-projects', handleNavigateToProjects);
+    window.addEventListener('navigate-to-models', handleNavigateToModels);
+    window.addEventListener('navigate-to-device', handleNavigateToDevice);
+    window.addEventListener('open-project', handleOpenProject as EventListener);
+    
     return () => {
       window.removeEventListener('navigate-to-settings', handleNavigateToSettings);
+      window.removeEventListener('navigate-to-projects', handleNavigateToProjects);
+      window.removeEventListener('navigate-to-models', handleNavigateToModels);
+      window.removeEventListener('navigate-to-device', handleNavigateToDevice);
+      window.removeEventListener('open-project', handleOpenProject as EventListener);
     };
   }, []);
 

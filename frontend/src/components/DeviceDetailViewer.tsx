@@ -376,7 +376,7 @@ export const DeviceDetailViewer: React.FC<DeviceDetailViewerProps> = ({
                                   alt={`Image ${idx + 1}`}
                                   style={{
                                     maxWidth: '100%',
-                                    maxHeight: '600px',
+                                    maxHeight: '350px',
                                     objectFit: 'contain',
                                   }}
                                   onError={(e) => {
