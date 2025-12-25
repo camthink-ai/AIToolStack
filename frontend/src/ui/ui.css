@@ -30,7 +30,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  margin-bottom: var(--spacing-lg);
 }
 
 .ui-dialog-title {
@@ -205,7 +204,7 @@
 }
 
 .alert-footer {
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-lg);
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;
@@ -305,7 +304,7 @@
 }
 
 .confirm-footer {
-  padding: var(--spacing-md) var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-lg);
   border-top: 1px solid var(--border-color);
   display: flex;
   justify-content: flex-end;

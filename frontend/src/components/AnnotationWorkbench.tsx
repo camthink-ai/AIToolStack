@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ToolsBar } from './ToolsBar';
 import { AnnotationCanvas } from './AnnotationCanvas';
@@ -7,9 +8,10 @@ import { ShortcutHelper } from './ShortcutHelper';
 import { MQTTGuide } from './MQTTGuide';
 import { TrainingPanel } from './TrainingPanel';
 import { DatasetImportModal } from './DatasetImportModal';
+import { DataSourceManager } from './DataSourceManager';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { API_BASE_URL } from '../config';
-import { IoArrowBack, IoDownload, IoChevronDown, IoCloudUpload, IoRocket } from 'react-icons/io5';
+import { IoArrowBack, IoDownload, IoChevronDown, IoCloudUpload, IoRocket, IoLink } from 'react-icons/io5';
 import './AnnotationWorkbench.css';
 import { Button } from '../ui/Button';
 import { Alert } from '../ui/Alert';
@@ -65,7 +67,7 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   onOpenTraining
 }) => {
   const { t } = useTranslation();
-  const { alertState, showError, closeAlert } = useAlert();
+  const { alertState, showError, showSuccess, closeAlert } = useAlert();
   const [currentTool, setCurrentTool] = useState<ToolType>('select');
   const [images, setImages] = useState<ImageInfo[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState<number>(-1);
@@ -80,25 +82,56 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
   const [isExporting, setIsExporting] = useState(false);
   const [showTrainingPanel, setShowTrainingPanel] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showDataSourceModal, setShowDataSourceModal] = useState(false);
   const exportMenuRef = React.useRef<HTMLDivElement>(null);
+  const exportMenuButtonRef = React.useRef<HTMLButtonElement>(null);
+  const exportMenuDropdownRef = React.useRef<HTMLDivElement>(null);
+  const [exportMenuPosition, setExportMenuPosition] = useState<{ top: number; left: number; width?: number } | null>(null);
   const annotationCacheRef = React.useRef<Record<number, Annotation[]>>({});
   const annotationsAbortRef = React.useRef<AbortController | null>(null);
   const imageListRefreshTimeoutRef = React.useRef<number | null>(null);
   const previousImageIdRef = React.useRef<number | null>(null); // Track current image ID to detect changes
 
-  // Close dropdown menu when clicking outside
+  // Calculate dropdown menu position and close when clicking outside
   useEffect(() => {
+    const updateMenuPosition = () => {
+      if (exportMenuButtonRef.current && showExportMenu) {
+        const rect = exportMenuButtonRef.current.getBoundingClientRect();
+        setExportMenuPosition({
+          top: rect.bottom + 4, // 4px spacing
+          left: rect.left, // Align with button left edge
+          width: rect.width, // Match button width
+        });
+      } else {
+        setExportMenuPosition(null);
+      }
+    };
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      // Check if click is outside button, dropdown container, and the portal menu
+      if (
+        exportMenuButtonRef.current && 
+        !exportMenuButtonRef.current.contains(target) &&
+        exportMenuRef.current &&
+        !exportMenuRef.current.contains(target) &&
+        exportMenuDropdownRef.current &&
+        !exportMenuDropdownRef.current.contains(target)
+      ) {
         setShowExportMenu(false);
       }
     };
 
     if (showExportMenu) {
+      updateMenuPosition();
+      window.addEventListener('resize', updateMenuPosition);
+      window.addEventListener('scroll', updateMenuPosition, true);
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showExportMenu]);
@@ -668,6 +701,7 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+        showSuccess(t('annotation.exportYOLOSuccess', 'YOLO 数据集导出成功'));
       } else if (exportType === 'zip') {
         // Export dataset zip package
         const downloadResponse = await fetch(`${API_BASE_URL}/projects/${project.id}/export/zip`);
@@ -685,6 +719,7 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
+        showSuccess(t('annotation.exportZipSuccess', '数据集导出成功'));
       }
     } catch (error: any) {
       showError(`${t('common.exportFailed', 'Export failed')}: ${error.message}`);
@@ -706,12 +741,12 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
         <div className="header-right">
           <div className="header-info">
             {currentImage && (
-              <>
+              <div className="image-info-column">
                 <span className="image-filename">{currentImage.filename}</span>
                 <span className="image-resolution">
                   {currentImage.width} × {currentImage.height}
                 </span>
-              </>
+              </div>
             )}
           </div>
           
@@ -736,6 +771,15 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           <Button
             variant="secondary"
             size="sm"
+            onClick={() => setShowDataSourceModal(true)}
+          >
+            <Icon component={IoLink} />
+            <span>{t('project.dataSource.addSource', '添加数据源')}</span>
+          </Button>
+          
+          <Button
+            variant="secondary"
+            size="sm"
             className="btn-export"
             onClick={() => setShowImportModal(true)}
           >
@@ -745,19 +789,33 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           
           <div className="export-dropdown" ref={exportMenuRef}>
             <Button
+              ref={exportMenuButtonRef}
               variant="secondary"
               size="sm"
               className="btn-export"
               onClick={() => setShowExportMenu(!showExportMenu)}
               disabled={isExporting}
+              aria-expanded={showExportMenu}
             >
               <Icon component={IoDownload} />
               <span>{isExporting ? t('annotation.exporting') : t('annotation.exportDataset')}</span>
               <Icon component={IoChevronDown} />
             </Button>
             
-            {showExportMenu && (
-              <div className="dropdown-menu">
+            {showExportMenu && exportMenuPosition && createPortal(
+              <div 
+                ref={exportMenuDropdownRef}
+                className="dropdown-menu"
+                style={{
+                  top: `${exportMenuPosition.top}px`,
+                  left: `${exportMenuPosition.left}px`,
+                  width: exportMenuPosition.width ? `${exportMenuPosition.width}px` : 'auto',
+                }}
+                onClick={(e) => {
+                  // Prevent event from bubbling to document, which would trigger handleClickOutside
+                  e.stopPropagation();
+                }}
+              >
                 <Button
                   variant="ghost"
                   size="sm"
@@ -776,7 +834,8 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
                 >
                   {t('annotation.exportZIP')}
                 </Button>
-              </div>
+              </div>,
+              document.body
             )}
           </div>
         </div>
@@ -869,6 +928,16 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           setShowImportModal(false);
           fetchImages();
           fetchClasses();
+        }}
+      />
+
+      <DataSourceManager
+        projectId={project.id}
+        isOpen={showDataSourceModal}
+        onClose={() => setShowDataSourceModal(false)}
+        onUpdate={() => {
+          // Refresh image list when devices are bound/unbound
+          fetchImages();
         }}
       />
 

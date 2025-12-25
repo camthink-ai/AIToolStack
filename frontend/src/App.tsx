@@ -5,6 +5,7 @@ import { ProjectSelector } from './components/ProjectSelector';
 import { AnnotationWorkbench } from './components/AnnotationWorkbench';
 import { TrainingPanel } from './components/TrainingPanel';
 import { SystemSettings } from './components/SystemSettings';
+import { DeviceManager } from './components/DeviceManager';
 import { API_BASE_URL } from './config';
 import './App.css';
 
@@ -16,7 +17,7 @@ interface Project {
   updated_at?: string;
 }
 
-type MenuItem = 'dashboard' | 'projects' | 'models' | 'settings';
+type MenuItem = 'dashboard' | 'projects' | 'models' | 'device' | 'settings';
 
 function App() {
   const [activeMenu, setActiveMenu] = useState<MenuItem>('dashboard');
@@ -148,6 +149,9 @@ function App() {
 
       case 'settings':
         return <SystemSettings />;
+
+      case 'device':
+        return <DeviceManager />;
 
       default:
         return null;

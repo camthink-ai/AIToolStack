@@ -106,15 +106,22 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
       setImageLoading(false);
       setImageError(null);
       
-      // Calculate initial scale and offset to center image
+      // Calculate initial scale and offset to center image with padding
       if (containerRef.current) {
         const container = containerRef.current;
         const containerWidth = container.clientWidth;
         const containerHeight = container.clientHeight;
         
-        const scaleX = containerWidth / img.width;
-        const scaleY = containerHeight / img.height;
-        const initialScale = Math.min(scaleX, scaleY, 1); // Don't scale up beyond original size
+        // Add padding: 60px on each side for better visual spacing
+        const padding = 60;
+        const availableWidth = containerWidth - padding * 2;
+        const availableHeight = containerHeight - padding * 2;
+        
+        const scaleX = availableWidth / img.width;
+        const scaleY = availableHeight / img.height;
+        // 为了保证不同尺寸图片在 UI 上占用的宽度基本一致，这里允许适度放大图片以适配容器
+        // 不再强制限制 initialScale <= 1
+        const initialScale = Math.min(scaleX, scaleY);
         
         setScale(initialScale);
         setOffset({

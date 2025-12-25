@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { API_BASE_URL } from '../config';
-import { IoRefresh, IoAdd, IoFolder, IoTrash, IoClose } from 'react-icons/io5';
+import { IoAdd, IoFolder, IoTrash, IoClose } from 'react-icons/io5';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -168,9 +168,6 @@ export const ProjectSelector: React.FC<ProjectSelectorProps> = ({
           <div className="section-header">
             <h2>{t('project.title')}</h2>
             <div className="header-actions">
-              <Button variant="secondary" size="md" onClick={onRefresh}>
-                <Icon component={IoRefresh} /> {t('common.refresh')}
-              </Button>
               <Button variant="primary" size="md" onClick={() => setShowCreateModal(true)}>
                 <Icon component={IoAdd} /> {t('project.createNew')}
               </Button>

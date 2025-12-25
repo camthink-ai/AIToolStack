@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { IoChevronDown, IoChevronUp, IoInformationCircleOutline, IoCheckmarkCircle, IoCloseCircle, IoCopyOutline, IoRefresh, IoOpenOutline } from 'react-icons/io5';
 import { API_BASE_URL } from '../config';
@@ -56,6 +57,8 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
   const [copied, setCopied] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const guideHeaderRef = useRef<HTMLDivElement>(null);
+  const [contentPosition, setContentPosition] = useState<{ top: number; right: number } | null>(null);
 
   useEffect(() => {
     fetchMQTTStatus();
@@ -63,6 +66,32 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
     const interval = setInterval(fetchMQTTStatus, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // Calculate content position when expanded
+  useEffect(() => {
+    const updateContentPosition = () => {
+      if (guideHeaderRef.current && isExpanded) {
+        const rect = guideHeaderRef.current.getBoundingClientRect();
+        setContentPosition({
+          top: rect.bottom + 4, // 4px spacing
+          right: window.innerWidth - rect.right,
+        });
+      } else {
+        setContentPosition(null);
+      }
+    };
+
+    if (isExpanded) {
+      updateContentPosition();
+      window.addEventListener('resize', updateContentPosition);
+      window.addEventListener('scroll', updateContentPosition, true);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateContentPosition);
+      window.removeEventListener('scroll', updateContentPosition, true);
+    };
+  }, [isExpanded]);
 
   const copyToClipboard = (text: string, id: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -134,6 +163,7 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
   return (
     <div className="mqtt-guide">
       <div
+        ref={guideHeaderRef}
         className="mqtt-guide-header"
         onClick={() => setIsExpanded(!isExpanded)}
       >
@@ -164,8 +194,14 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
         <Icon component={isExpanded ? IoChevronUp : IoChevronDown} />
       </div>
 
-      {isExpanded && (
-        <div className="mqtt-guide-content">
+      {isExpanded && contentPosition && createPortal(
+        <div 
+          className="mqtt-guide-content"
+          style={{
+            top: `${contentPosition.top}px`,
+            right: `${contentPosition.right}px`,
+          }}
+        >
           {mqttStatus && !mqttStatus.enabled ? (
             <div className="mqtt-warning">
               <p>{t('mqtt.serviceDisabled')}</p>
@@ -475,7 +511,8 @@ export const MQTTGuide: React.FC<MQTTGuideProps> = ({ projectId, projectName }) 
               </div>
             </>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

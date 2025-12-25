@@ -102,11 +102,11 @@ export const Alert: React.FC<AlertProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="alert-dialog">
         <DialogHeader className="alert-header">
-          <div className="alert-icon" style={{ color: config.color }}>
+          <div className="alert-icon" style={{ color: 'var(--text-primary)' }}>
             {config.icon}
           </div>
           <DialogTitle asChild>
-            <h3 style={{ color: config.color }}>{displayTitle}</h3>
+            <h3 style={{ color: 'var(--text-primary)' }}>{displayTitle}</h3>
           </DialogTitle>
           <DialogClose className="close-btn">
             <IoClose />

@@ -1,5 +1,5 @@
 """Database model definitions"""
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, Boolean, ForeignKey, Table
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -23,6 +23,11 @@ class Project(Base):
     # Relationships
     images = relationship("Image", back_populates="project", cascade="all, delete-orphan")
     classes = relationship("Class", back_populates="project", cascade="all, delete-orphan")
+    devices = relationship(
+        "Device",
+        secondary="device_project_association",
+        back_populates="projects"
+    )
 
 
 class Image(Base):
@@ -128,6 +133,66 @@ class ModelRegistry(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     project = relationship("Project")
+
+
+class Device(Base):
+    """Device table"""
+    __tablename__ = "devices"
+
+    # Device identity
+    id = Column(String, primary_key=True)  # device_id (SN / MAC / UUID)
+    name = Column(String, nullable=True)  # Human readable name
+    type = Column(String, nullable=True)  # Device type, e.g. NE101 / NE301
+    model = Column(String, nullable=True)  # Hardware model
+    serial_number = Column(String, nullable=True)
+    mac_address = Column(String, nullable=True)
+
+    # Runtime status
+    status = Column(String, default="offline")  # online/offline/error/unknown
+    last_seen = Column(DateTime, nullable=True)
+    last_ip = Column(String, nullable=True)
+    firmware_version = Column(String, nullable=True)
+    hardware_version = Column(String, nullable=True)
+    power_supply_type = Column(String, nullable=True)  # battery / dc / other
+
+    # Extra info
+    last_report = Column(Text, nullable=True)  # Raw JSON payload of last report
+    tags = Column(String, nullable=True)  # Comma separated tags
+    extra_info = Column(Text, nullable=True)  # JSON string for arbitrary metadata
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Many-to-many relationship with projects
+    projects = relationship(
+        "Project",
+        secondary="device_project_association",
+        back_populates="devices"
+    )
+    # One-to-many relationship with reports
+    reports = relationship("DeviceReport", back_populates="device", cascade="all, delete-orphan", order_by="DeviceReport.created_at.desc()")
+
+
+# Many-to-many association table for Device <-> Project
+device_project_association = Table(
+    "device_project_association",
+    Base.metadata,
+    Column("device_id", String, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True),
+    Column("project_id", String, ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True),
+    Column("created_at", DateTime, default=datetime.utcnow)
+)
+
+
+class DeviceReport(Base):
+    """Device report history table"""
+    __tablename__ = "device_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_id = Column(String, ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True)
+    report_data = Column(Text, nullable=False)  # Raw JSON payload
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    device = relationship("Device", back_populates="reports")
 
 
 class TrainingLog(Base):

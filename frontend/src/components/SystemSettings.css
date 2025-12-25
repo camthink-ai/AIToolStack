@@ -3,6 +3,60 @@
  * Styled for MQTT configuration and device bootstrap information
  */
 
+/* Device form select dropdown - follows project design standards */
+.device-form-select {
+  width: 100%;
+  padding: var(--input-padding-y) var(--input-padding-x);
+  padding-right: calc(var(--input-padding-x) + 24px); /* Extra space for arrow */
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--input-border-radius);
+  color: var(--text-primary);
+  font-size: var(--input-font-size);
+  font-family: var(--font-family-base);
+  transition: all var(--transition-base);
+  box-sizing: border-box;
+  appearance: none; /* Remove default arrow */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4L6 8L10 4' stroke='%23666666' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--input-padding-x) center;
+  background-size: 12px 12px;
+  cursor: pointer;
+}
+
+.device-form-select:hover {
+  border-color: var(--border-dark);
+}
+
+.device-form-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--primary-lighter);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M2 4L6 8L10 4' stroke='%230A0D16' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.device-form-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--bg-secondary);
+}
+
+.device-form-select option {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: var(--input-font-size);
+}
+
+.device-form-select option:hover {
+  background: var(--bg-secondary);
+}
+
+.device-form-select option:checked {
+  background: var(--primary-color);
+  color: var(--text-white);
+}
+
 /* External Broker List Styles */
 .settings-broker-list {
   display: flex;
@@ -728,7 +782,7 @@
 }
 
 .config-modal-content {
-  padding: var(--spacing-xl);
+  padding: var(--spacing-xl) var(--spacing-xl);
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
@@ -799,4 +853,32 @@
   .settings-form-grid {
     gap: var(--spacing-lg);
   }
+}
+
+/* Device Status Badge Styles */
+.device-status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.device-status-online {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #4caf50;
+}
+
+.device-status-offline {
+  background: #ffebee;
+  color: #c62828;
+  border: 1px solid #f44336;
+}
+
+.device-status-unknown {
+  background: #fff3e0;
+  color: #e65100;
+  border: 1px solid #ff9800;
 }

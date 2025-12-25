@@ -79,7 +79,6 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             variant="primary" 
             onClick={handleConfirm}
             disabled={disabled}
-            style={variant === 'danger' ? { backgroundColor: 'var(--error-color, #ef4444)' } : undefined}
           >
             {displayConfirmText}
           </Button>

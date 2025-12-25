@@ -126,7 +126,7 @@ interface ExternalBroker {
   updated_at: string;
 }
 
-type TabType = 'mqtt' | 'device';
+type TabType = 'mqtt' | 'certificates';
 
 // Broker Edit Dialog Component
 interface BrokerEditDialogProps {
@@ -880,14 +880,21 @@ const DeviceCertificatesList: React.FC<DeviceCertificatesListProps> = React.memo
   }, []);
 
   React.useEffect(() => {
+    // Load data when component mounts
     loadDeviceCerts();
     // Listen for custom event to refresh list when certificate is generated
     const handleRefresh = () => {
       loadDeviceCerts();
     };
+    // Listen for custom event to refresh when switching to certificates tab
+    const handleTabSwitch = () => {
+      loadDeviceCerts();
+    };
     window.addEventListener('device-cert-generated', handleRefresh);
+    window.addEventListener('refresh-certificate-list', handleTabSwitch);
     return () => {
       window.removeEventListener('device-cert-generated', handleRefresh);
+      window.removeEventListener('refresh-certificate-list', handleTabSwitch);
     };
   }, [loadDeviceCerts]);
 
@@ -1010,7 +1017,6 @@ DeviceCertificatesList.displayName = 'DeviceCertificatesList';
 
 export const SystemSettings: React.FC = () => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TabType>('mqtt');
   const [config, setConfig] = useState<MQTTConfig | null>(null);
   const [status, setStatus] = useState<MQTTStatus | null>(null);
   const [bootstrap, setBootstrap] = useState<DeviceBootstrapInfo | null>(null);
@@ -1025,6 +1031,7 @@ export const SystemSettings: React.FC = () => {
   const [showBuiltinPassword, setShowBuiltinPassword] = useState(false);
   const caFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [copiedPassword, setCopiedPassword] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<TabType>('mqtt');
 
   const copyToClipboard = useCallback((text: string, type: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -1045,6 +1052,14 @@ export const SystemSettings: React.FC = () => {
   useEffect(() => {
     void refreshAll();
   }, []);
+
+  // Refresh certificate list when switching to certificates tab
+  useEffect(() => {
+    if (activeTab === 'certificates') {
+      // Dispatch event to trigger certificate list refresh
+      window.dispatchEvent(new CustomEvent('refresh-certificate-list'));
+    }
+  }, [activeTab]);
 
   const refreshAll = async () => {
     setLoading(true);
@@ -1074,14 +1089,14 @@ export const SystemSettings: React.FC = () => {
 
   // Auto-refresh broker connection status periodically
   useEffect(() => {
-    if (activeTab === 'mqtt' && config?.enabled) {
+    if (config?.enabled) {
       const interval = setInterval(() => {
         loadExternalBrokers();
         loadStatus(); // Also refresh MQTT status
       }, 5000); // Refresh every 5 seconds
       return () => clearInterval(interval);
     }
-  }, [activeTab, config?.enabled]);
+  }, [config?.enabled]);
 
   const loadConfig = async () => {
     try {
@@ -1689,31 +1704,6 @@ export const SystemSettings: React.FC = () => {
               </div>
             </div>
 
-            {/* 证书管理 */}
-            {cfg.builtin_protocol === 'mqtts' && (
-              <div className="settings-group" style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--border-color)' }}>
-                <h4 style={{ marginBottom: '12px', fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {t('settings.builtinBroker.certManagement')}
-                </h4>
-                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                  {t('settings.builtinBroker.certManagementDesc')}
-                </div>
-                <div style={{ marginBottom: '12px' }}>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => {
-                      setShowGenerateCertDialog(true);
-                    }}
-                    disabled={!cfg.enabled}
-                  >
-                    <Icon component={IoAdd} /> {t('settings.builtinBroker.generateCert')}
-                  </Button>
-                </div>
-                <DeviceCertificatesList enabled={cfg.enabled} showSuccess={showSuccess} showError={showError} />
-              </div>
-            )}
           </div>
         </div>
 
@@ -1848,15 +1838,86 @@ export const SystemSettings: React.FC = () => {
           />
         )}
 
-        {/* 生成证书对话框 */}
-        {showGenerateCertDialog && (
+      </>
+    );
+  };
+
+  const renderCertificatesTab = () => {
+    if (!config) {
+      return (
+        <div className="settings-card">
+          <div className="settings-card-body">
+            <div className="settings-loading">
+              <p>{t('common.loading')}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const cfg = config;
+    // Check if TLS is enabled (for MQTTS support)
+    // Note: Built-in broker can support both MQTT and MQTTS simultaneously
+    // builtin_protocol determines which protocol AIToolStack client uses to connect
+    // builtin_tls_enabled determines if TLS listener (8883) is enabled
+    // Certificate management is independent - certificates are used for MQTTS connections
+    const isTLSEnabled = cfg.builtin_tls_enabled && cfg.builtin_tls_ca_cert_path;
+
+    return (
+      <>
+        {/* 证书管理 */}
+        <div className="settings-card">
+          <div className="settings-card-header">
+            <div>
+              <h3 className="settings-card-title">{t('settings.builtinBroker.certManagement')}</h3>
+              <p className="settings-card-subtitle">{t('settings.builtinBroker.certManagementDesc')}</p>
+            </div>
+          </div>
+          <div className="settings-card-body">
+            {!isTLSEnabled && (
+              <div style={{ 
+                padding: '12px 16px', 
+                marginBottom: '16px',
+                background: 'var(--bg-info, #d1ecf1)',
+                border: '1px solid var(--border-info, #bee5eb)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-info, #0c5460)',
+                fontSize: '13px'
+              }}>
+                <p style={{ margin: 0 }}>
+                  {t('settings.builtinBroker.certManagementInfo', '证书用于 MQTTS 连接。内置 Broker 可以同时支持 MQTT (1883) 和 MQTTS (8883) 连接。如需使用 MQTTS，请在 MQTT 配置中启用 TLS。')}
+                </p>
+              </div>
+            )}
+            <div style={{ marginBottom: '16px' }}>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  setShowGenerateCertDialog(true);
+                }}
+                disabled={!cfg.enabled || !isTLSEnabled}
+              >
+                <Icon component={IoAdd} /> {t('settings.builtinBroker.generateCert')}
+              </Button>
+            </div>
+            <DeviceCertificatesList 
+              enabled={cfg.enabled} 
+              showSuccess={showSuccess} 
+              showError={showError} 
+            />
+          </div>
+        </div>
+
+        {/* Generate Certificate Dialog */}
+        {isTLSEnabled && (
           <GenerateCertDialog
             open={showGenerateCertDialog}
-            onClose={() => {
+            onClose={() => setShowGenerateCertDialog(false)}
+            onSuccess={() => {
               setShowGenerateCertDialog(false);
-            }}
-            onSuccess={async () => {
-              // Device certificate generation - no need to reload config
+              refreshAll();
             }}
             forAIToolStack={false}
             enabled={cfg.enabled}
@@ -2156,7 +2217,7 @@ export const SystemSettings: React.FC = () => {
             <div className="settings-device-topic-item">
               <div className="settings-device-topic-row">
                 <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.topic')}:</span>
-                <code className="settings-code-inline">device/{'{'}device_id{'}'}/report</code>
+                <code className="settings-code-inline">device/{'{'}device_id{'}'}/uplink</code>
               </div>
               <div className="settings-device-topic-row">
                 <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.purpose')}:</span>
@@ -2166,7 +2227,7 @@ export const SystemSettings: React.FC = () => {
             <div className="settings-device-topic-item">
               <div className="settings-device-topic-row">
                 <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.topic')}:</span>
-                <code className="settings-code-inline">device/{'{'}device_id{'}'}/command</code>
+                <code className="settings-code-inline">device/{'{'}device_id{'}'}/downlink</code>
               </div>
               <div className="settings-device-topic-row">
                 <span className="settings-device-topic-label">{t('settings.deviceAccess.topics.purpose')}:</span>
@@ -2174,6 +2235,7 @@ export const SystemSettings: React.FC = () => {
               </div>
             </div>
           </div>
+
         </div>
       </div>
     );
@@ -2189,7 +2251,7 @@ export const SystemSettings: React.FC = () => {
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* Tab navigation */}
         <div className="settings-tabs">
           <button
             className={`settings-tab ${activeTab === 'mqtt' ? 'settings-tab-active' : ''}`}
@@ -2198,17 +2260,17 @@ export const SystemSettings: React.FC = () => {
             <span className="settings-tab-label">{t('settings.tabs.mqtt')}</span>
           </button>
           <button
-            className={`settings-tab ${activeTab === 'device' ? 'settings-tab-active' : ''}`}
-            onClick={() => setActiveTab('device')}
+            className={`settings-tab ${activeTab === 'certificates' ? 'settings-tab-active' : ''}`}
+            onClick={() => setActiveTab('certificates')}
           >
-            <span className="settings-tab-label">{t('settings.tabs.deviceAccess')}</span>
+            <span className="settings-tab-label">{t('settings.tabs.certificates', '证书管理')}</span>
           </button>
         </div>
 
-        {/* Tab Content */}
+        {/* Tab panel */}
         <div className="settings-tab-panel">
           {activeTab === 'mqtt' && renderMQTTConfigTab()}
-          {activeTab === 'device' && renderDeviceBootstrapTab()}
+          {activeTab === 'certificates' && renderCertificatesTab()}
         </div>
       </div>
       <Alert

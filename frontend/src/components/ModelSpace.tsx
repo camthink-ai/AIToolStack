@@ -643,16 +643,6 @@ export const ModelSpace: React.FC<ModelSpaceProps> = ({ onOpenTraining }) => {
                 <IoCloudUpload style={{ marginRight: '4px' }} />
                 {t('modelSpace.uploadModelQuantize', '上传模型量化')}
               </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={fetchModels}
-                disabled={loading}
-              >
-                {loading
-                  ? t('common.loading', '加载中...')
-                  : t('common.refresh', '刷新')}
-              </Button>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

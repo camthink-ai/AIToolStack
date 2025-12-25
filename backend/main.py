@@ -1,5 +1,6 @@
 """Backend main entry point"""
 import os
+import logging
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,18 @@ from backend.api import routes
 from backend.services.mqtt_service import mqtt_service
 from backend.services.mqtt_broker import builtin_mqtt_broker
 from backend.services.websocket_manager import websocket_manager
+
+# Configure logging level based on DEBUG setting
+log_level = logging.DEBUG if settings.DEBUG else logging.INFO
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s | %(name)s | %(levelname)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+# Set specific logger levels
+logging.getLogger("backend.services.mqtt_service").setLevel(log_level)
+logging.getLogger("backend.api.routes").setLevel(log_level)
 
 # Create FastAPI application
 app = FastAPI(
@@ -54,6 +67,18 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str):
             # For example: sync annotation operations, real-time collaboration, etc.
     except WebSocketDisconnect:
         websocket_manager.disconnect(websocket, project_id)
+
+@app.websocket("/ws/devices")
+async def device_websocket_endpoint(websocket: WebSocket):
+    """WebSocket connection endpoint for device list updates"""
+    await websocket_manager.connect_device_listener(websocket)
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Client messages can be handled here if needed
+    except WebSocketDisconnect:
+        websocket_manager.disconnect_device_listener(websocket)
 
 # Register health check endpoint BEFORE catch-all route
 # FastAPI matches more specific routes first, so /health will match before /{full_path:path}

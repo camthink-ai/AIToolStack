@@ -83,9 +83,7 @@
 }
 
 .mqtt-guide-content {
-  position: absolute;
-  top: calc(100% + var(--spacing-xs));
-  right: 0;
+  position: fixed; /* Use fixed to escape overflow constraints */
   width: 450px;
   max-width: calc(100vw - 40px);
   padding: var(--spacing-lg);
@@ -95,7 +93,7 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
-  z-index: var(--z-dropdown);
+  z-index: 10000; /* Very high z-index to ensure visibility */
 }
 
 .mqtt-warning {
