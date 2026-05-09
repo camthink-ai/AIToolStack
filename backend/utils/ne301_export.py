@@ -586,7 +586,9 @@ def _build_with_docker(
                     return p.exists() and (p / "Model").exists()
                 else:
                     # Lenient mode: only check path format (host path cannot be verified inside container)
-                    return len(str(path)) > 0 and "/" in str(path)
+                    # Support both Unix (/path/to/dir) and Windows (C:\path\to\dir) paths
+                    path_str = str(path)
+                    return len(path_str) > 1 and ("/" in path_str or "\\" in path_str or (len(path_str) >= 2 and path_str[1] == ":"))
             except Exception:
                 return False
         
@@ -670,11 +672,24 @@ def _build_with_docker(
                             # If datasets_host_path = /path/to/project/datasets
                             # Then ne301_host_path should be /path/to/project/ne301
                             try:
-                                datasets_path = Path(datasets_host_path)
+                                # Normalize Windows backslashes to forward slashes for path parsing
+                                # Docker inspect on Windows may return paths like "C:\Users\...\datasets"
+                                # which Path() on Linux won't parse correctly (treats \ as part of filename)
+                                normalized_path = datasets_host_path.replace("\\", "/")
+                                # Remove trailing slash if present
+                                normalized_path = normalized_path.rstrip("/")
+                                datasets_path = Path(normalized_path)
                                 # Verify datasets path format is correct (directory name should be datasets)
                                 # Note: Cannot verify host path existence inside container, so only check format
                                 if datasets_path.name == "datasets":
-                                    inferred_ne301_path = datasets_path.parent / "ne301"
+                                    # Build inferred ne301 path, preserving original separator style
+                                    parent_str = str(datasets_path.parent)
+                                    if "\\" in datasets_host_path:
+                                        # Windows path: use backslash separator
+                                        inferred_ne301_path_str = parent_str.replace("/", "\\") + "\\ne301"
+                                    else:
+                                        inferred_ne301_path_str = parent_str + "/ne301"
+                                    inferred_ne301_path = inferred_ne301_path_str
                                     # When validating inferred host path inside container, use lenient mode (only check format)
                                     if validate_mount_path(str(inferred_ne301_path), strict=False):
                                         mount_path = str(inferred_ne301_path)
@@ -708,7 +723,9 @@ def _build_with_docker(
                                 container_path = parts[1]  # Container path
                                 if container_path == "/workspace/ne301" or container_path == str(workspace_path):
                                     # Skip obviously wrong paths (Docker Desktop virtual paths)
-                                    if "/run/host" in host_path or "/tmp" in host_path or not host_path.startswith("/"):
+                                    # Windows paths like C:\... are valid, don't skip them
+                                    is_windows_path = len(host_path) >= 2 and host_path[1] == ":"
+                                    if "/run/host" in host_path or "/tmp" in host_path or (not host_path.startswith("/") and not is_windows_path):
                                         logger.debug(f"[NE301] Skipping suspicious path: {host_path}")
                                         continue
                                     # Verify path format (use lenient mode, because host path cannot be verified inside container)
