@@ -4,6 +4,7 @@ Used to generate model packages compatible with NE301 devices
 """
 import json
 import logging
+import re
 import subprocess
 import shutil
 import time
@@ -524,6 +525,16 @@ def _build_with_docker(
     
     # If still no model_name, use wildcard
     model_name_pattern = model_name if model_name else "*"
+
+    # SECURITY (M-4): model_name is interpolated into a `bash -c` command
+    # below. Enforce a safe charset here instead of trusting every call site
+    # to pass slugified values (defense in depth against command injection).
+    if model_name and not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", model_name):
+        logger.warning(
+            f"[NE301] Unsafe model_name {model_name!r} rejected; falling back to wildcard"
+        )
+        model_name = None
+        model_name_pattern = "*"
     
     # Detect system architecture
     import platform

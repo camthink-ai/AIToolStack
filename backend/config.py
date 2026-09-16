@@ -509,12 +509,37 @@ def get_mqtt_broker_host(request=None) -> str:
 
 class Settings(BaseSettings):
     """Application configuration"""
-    
+
     # Server configuration
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    DEBUG: bool = True
-    
+    # DEBUG enables uvicorn --reload, DEBUG-level logs and the public
+    # /docs + /openapi.json API map. Must stay False in production.
+    DEBUG: bool = False
+
+    # ========== API security ==========
+    # When enabled, every /api and /ws request must present a valid key
+    # (X-API-Key header, "Authorization: Bearer <key>", or ?api_key= for
+    # <img> tags and WebSocket connections). /health and frontend static
+    # files stay public. Generate a key with: openssl rand -hex 32
+    # Comma-separate multiple keys to grant several clients access.
+    API_AUTH_ENABLED: bool = False
+    API_KEY: str = ""  # e.g. "a1b2c3..." or "key1,key2"
+    # Comma-separated list of origins allowed by CORS. Leave empty to use the
+    # development defaults; in production set it to the exact UI origin(s).
+    CORS_ORIGINS: str = ""
+    # Simple per-IP request rate limit applied to /api endpoints (0 = off).
+    # Generous by design: behind Docker bridge/NAT many clients can share one
+    # source IP, and image-heavy UI flows issue many requests.
+    RATE_LIMIT_PER_MINUTE: int = 600
+
+    # Upload size limits (DoS protection)
+    MAX_ZIP_UNCOMPRESSED_MB: int = 8192  # Zip-bomb cap for extracted archives
+    MAX_MODEL_UPLOAD_MB: int = 2048      # .pt model files
+    MAX_DATASET_UPLOAD_MB: int = 4096    # Dataset import archives
+    MAX_CALIBRATION_UPLOAD_MB: int = 1024  # Calibration image archives
+    MAX_TLS_FILE_MB: int = 2             # PEM certificates/keys
+
     # MQTT configuration
     MQTT_ENABLED: bool = True  # Whether to enable MQTT service
     MQTT_USE_BUILTIN_BROKER: bool = True  # Whether to use built-in Broker (default use built-in)
@@ -541,7 +566,10 @@ class Settings(BaseSettings):
     NE301_DOCKER_IMAGE: str = "camthink/ne301-dev:latest"  # Docker image name
 
     # NE301 auto-update configuration
-    NE301_AUTO_UPDATE: bool = True  # Whether to enable auto-update on startup
+    # Auto-pulling and executing code from an external repo at every startup
+    # is a supply-chain risk; keep this disabled in production and update the
+    # NE301 project deliberately (pinned commit) instead.
+    NE301_AUTO_UPDATE: bool = False
     NE301_UPDATE_TIMEOUT: int = 30  # Update operation timeout (seconds)
     NE301_UPDATE_STASH_CHANGES: bool = False  # Whether to auto-stash local changes
 

@@ -29,6 +29,12 @@ services:
       # Note: On first run, will automatically clone to ./ne301, no manual operation needed
       - ./ne301:/workspace/ne301  # Host directory, auto-cloned on container startup (if empty)
       # Docker socket (for running Docker commands inside container to compile NE301 models)
+      # SECURITY (C-3): anyone with code execution inside this container owns
+      # the Docker host through this socket. Keep port 8000 off the public
+      # internet (firewall/reverse proxy), enable API_AUTH_ENABLED, and for
+      # stronger isolation front the socket with a docker-socket-proxy that
+      # only allows the /containers/* API:
+      #   - DOCKER_HOST=tcp://socket-proxy:2375
       - /var/run/docker.sock:/var/run/docker.sock
       # Share Mosquitto config so backend can manage passwordfile dynamically
       - ./mosquitto/config:/mosquitto/config
@@ -39,6 +45,13 @@ services:
       - HOST=0.0.0.0
       - PORT=8000
       - DEBUG=False
+      # ===== API authentication (CRITICAL fix) =====
+      # Uncomment the two lines below to require an API key on every /api and
+      # /ws request. Generate a key on the host with:  openssl rand -hex 32
+      # Then put API_KEY=<key> into the .env file next to this compose file.
+      # The web UI will show a key prompt on first use.
+      # - API_AUTH_ENABLED=true
+      # - API_KEY=${API_KEY}
       # MQTT configuration
       - MQTT_ENABLED=true
       # Use external Mosquitto broker instead of Python aMQTT broker
@@ -67,6 +80,10 @@ services:
       # - NE301_HOST_PATH=/path/to/project/ne301
       - NE301_USE_DOCKER=true
       - NE301_DOCKER_IMAGE=camthink/ne301-dev:latest
+      # SECURITY (H-10): auto git-pull of external code on every startup is a
+      # supply-chain risk. Keep it disabled; update the ./ne301 project
+      # deliberately (pinned commit) instead.
+      - NE301_AUTO_UPDATE=false
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

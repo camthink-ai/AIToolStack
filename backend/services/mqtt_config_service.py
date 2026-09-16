@@ -30,7 +30,10 @@ class MQTTConfig(BaseModel):
     builtin_broker_host: Optional[str] = None  # Manual override for broker host IP (if None, auto-detect)
     builtin_tcp_port: Optional[int] = None  # Fixed: 1883 for MQTT
     builtin_tls_port: Optional[int] = None  # Fixed: 8883 for MQTTS
-    builtin_allow_anonymous: bool = True  # Broker setting: whether to allow anonymous connections
+    # SECURITY (H-1): anonymous broker access is disabled by default. Devices
+    # must authenticate with username/password (or mTLS) — configure
+    # builtin_username / builtin_password before devices can connect.
+    builtin_allow_anonymous: bool = False  # Broker setting: whether to allow anonymous connections
     builtin_username: Optional[str] = None  # Broker setting: username for external devices (when anonymous is disabled)
     builtin_password: Optional[str] = None  # Broker setting: password for external devices (when anonymous is disabled)
     builtin_max_connections: int = 100  # Broker setting: maximum concurrent connections
@@ -106,7 +109,7 @@ class MQTTConfigService:
             # Ports are fixed: 1883 for MQTT, 8883 for MQTTS (user cannot modify)
             builtin_tcp_port=1883,
             builtin_tls_port=8883,
-            builtin_allow_anonymous=True,
+            builtin_allow_anonymous=False,  # Secure default (H-1): devices must authenticate
             builtin_username=None,
             builtin_password=None,
             builtin_max_connections=100,

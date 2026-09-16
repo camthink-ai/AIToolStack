@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { WS_BASE_URL } from '../config';
+import { withApiAuth } from '../apiAuth';
 
 export const useWebSocket = (
   projectId: string,
@@ -19,7 +20,7 @@ export const useWebSocket = (
       return;
     }
 
-    const wsUrl = `${WS_BASE_URL}/projects/${projectId}`;
+    const wsUrl = withApiAuth(`${WS_BASE_URL}/projects/${projectId}`);
     console.log('[WebSocket] Connecting to:', wsUrl);
     
     const ws = new WebSocket(wsUrl);

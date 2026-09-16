@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { WS_BASE_URL } from '../config';
+import { withApiAuth } from '../apiAuth';
 
 export const useDeviceWebSocket = (
   onMessage: (message: any) => void
@@ -14,7 +15,7 @@ export const useDeviceWebSocket = (
   }, [onMessage]);
 
   useEffect(() => {
-    const wsUrl = `${WS_BASE_URL}/devices`;
+    const wsUrl = withApiAuth(`${WS_BASE_URL}/devices`);
     console.log('[Device WebSocket] Connecting to:', wsUrl);
     
     const connect = () => {

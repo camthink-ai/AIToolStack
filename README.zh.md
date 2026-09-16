@@ -103,6 +103,46 @@ cd backend   && pip install -r requirements.txt && uvicorn main:app --reload
 
 ---
 
+## 安全配置
+
+### API 访问认证（生产环境建议开启）
+
+默认不启用登录，方便本地/边缘环境直接使用。如需给所有 `/api` 和 `/ws` 请求加上访问密钥：
+
+```bash
+# 1. 生成密钥
+openssl rand -hex 32
+
+# 2. 写入 docker-compose.yml 同目录的 .env 文件
+echo "API_KEY=<生成的密钥>" >> .env
+
+# 3. 取消 docker-compose.yml 中 API_AUTH_ENABLED / API_KEY 两行注释并重启
+docker compose up -d
+```
+
+网页首次访问会弹出密钥输入框，密钥保存在浏览器中，之后无需重复输入。`<img>` 标签和 WebSocket
+通过 `api_key` 查询参数传递密钥。`/health` 和前端静态资源保持公开。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `API_AUTH_ENABLED` | `false` | 所有 `/api` 和 `/ws` 请求必须携带访问密钥 |
+| `API_KEY` | （空） | 访问密钥，多个密钥用英文逗号分隔 |
+| `CORS_ORIGINS` | 本地开发地址 | 允许跨域的浏览器来源，逗号分隔 |
+| `RATE_LIMIT_PER_MINUTE` | `600` | `/api` 接口按 IP 限流（0 为关闭） |
+
+### 其他安全默认值
+
+- `DEBUG` 默认 `false`：隐藏 `/docs` 与 `/openapi.json`，错误响应不再回显内部细节。
+- 内置 Mosquitto 默认拒绝匿名连接（`builtin_allow_anonymous=false`），请在系统设置中为设备
+  配置用户名/密码。
+- 上传的 `.pt` 模型在隔离子进程中以 weights-only 方式加载，无法安全加载的文件直接拒绝。
+- ZIP 上传具备 Zip-Slip 与解压炸弹防护，各类上传均有大小限制。
+- 敏感操作（配置变更、证书/密钥操作、模型上传、设备删除）记录到 `data/audit.log`。
+- `NE301_AUTO_UPDATE` 默认 `false`：请手动更新 NE301 工程，而非每次启动自动拉取外部代码。
+
+> 即使做了以上加固，也请勿将 8000/1883/8883 端口直接暴露公网（配合防火墙、反向代理、VLAN 隔离）。
+> 后端容器仍挂载 `docker.sock` 用于 NE301 编译。
+
 ## 路线图
 
 - 🚀 **自动标注**：已启动自动标注后端/前端开发，实现模型带标签推理+手动审核闭环

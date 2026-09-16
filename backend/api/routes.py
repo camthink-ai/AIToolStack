@@ -32,6 +32,20 @@ from backend.services.external_broker_service import (
 from backend.services.training_service import training_service
 from backend.utils.yolo_export import YOLOExporter
 from backend.utils.dataset_import import DatasetImporter, generate_color
+from backend.utils.security_utils import (
+    PASSWORD_MASK,
+    audit_event,
+    client_ip_from_request,
+    extract_presented_key,
+    extract_zip_safe,
+    is_valid_api_key,
+    mask_password,
+    save_upload_limited,
+    unmask_password,
+    validate_broker_host,
+    validate_common_name,
+)
+from backend.utils.model_inspection import UnsafeModelError, inspect_yolo_model
 from backend.config import settings
 from PIL import Image as PILImage
 import io
@@ -41,6 +55,22 @@ import tempfile
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post("/auth/verify")
+async def verify_api_key(request: Request):
+    """Check whether the presented API key is valid (UI key gate).
+
+    When API authentication is disabled this always reports valid, so the
+    frontend can probe once at startup and behave accordingly.
+    """
+    if not settings.API_AUTH_ENABLED:
+        return {"auth_enabled": False, "valid": True}
+    presented = extract_presented_key(request)
+    return {
+        "auth_enabled": True,
+        "valid": is_valid_api_key(presented),
+    }
 
 
 def _slugify(text: str, max_len: int = 40) -> str:
@@ -771,7 +801,8 @@ async def upload_image(
     
     try:
         # Read file content
-        file_content = await file.read()
+        # Read one byte beyond the cap so oversized uploads fail fast
+        file_content = await file.read(settings.MAX_IMAGE_SIZE_MB * 1024 * 1024 + 1)
         
         # Verify file size
         size_mb = len(file_content) / (1024 * 1024)
@@ -1088,13 +1119,16 @@ async def import_dataset(
     temp_file = None
     temp_dir = None
     try:
-        # Save uploaded file to temp location
+        # Save uploaded file to temp location (chunked, with size cap to
+        # prevent memory/disk exhaustion via a huge upload)
         file_ext = Path(file.filename).suffix.lower() if file.filename else ''
         temp_file = Path(tempfile.mkdtemp()) / f"dataset{file_ext}"
         temp_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        file_content = await file.read()
-        temp_file.write_bytes(file_content)
+
+        try:
+            await save_upload_limited(file, temp_file, settings.MAX_DATASET_UPLOAD_MB)
+        except ValueError as e:
+            raise HTTPException(status_code=413, detail=str(e))
         
         # Parse dataset
         if format_type == 'coco':
@@ -1104,8 +1138,10 @@ async def import_dataset(
         elif format_type == 'project_zip':
             temp_dir = Path(tempfile.mkdtemp())
             try:
-                with zipfile.ZipFile(temp_file, 'r') as zip_ref:
-                    zip_ref.extractall(temp_dir)
+                # Zip-Slip + zip-bomb protected extraction
+                extract_zip_safe(temp_file, temp_dir)
+            except (zipfile.BadZipFile, ValueError) as e:
+                raise HTTPException(status_code=400, detail=f"Failed to unzip project package: {str(e)}")
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to unzip project package: {str(e)}")
 
@@ -1583,6 +1619,7 @@ def export_dataset_zip(project_id: str, db: Session = Depends(get_db)):
 @router.post("/projects/{project_id}/train")
 async def start_training(project_id: str, request: TrainingRequest, db: Session = Depends(get_db)):
     """Start model training: automatically export latest YOLO dataset from current project data and train"""
+    audit_event("training_start", project_id=project_id)
     import asyncio
     import logging
     from concurrent.futures import ThreadPoolExecutor
@@ -2688,7 +2725,7 @@ async def test_model(
         from ultralytics import YOLO
         
         # Read uploaded image
-        image_bytes = await file.read()
+        image_bytes = await file.read(settings.MAX_IMAGE_SIZE_MB * 1024 * 1024 + 1)
         image = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")  # Ensure RGB to avoid detection issues with transparency/grayscale
         
         # Load model
@@ -2789,6 +2826,7 @@ def clear_training(project_id: str, training_id: Optional[str] = Query(None), db
 
 @router.post("/models/upload")
 async def upload_model(
+    request: Request,
     file: UploadFile = File(...),
     model_name: str = Form(..., description="Model name"),
     model_type: str = Form("yolov8n", description="Model type (e.g., yolov8n)"),
@@ -2826,47 +2864,6 @@ async def upload_model(
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="Invalid class_names JSON format")
     
-    # Auto-detect num_classes and class_names from YOLO model if not provided
-    detected_num_classes = None
-    detected_class_names = None
-    try:
-        from ultralytics import YOLO
-        model = YOLO(str(file_path))
-        
-        # Method 1: Try to get from model.names
-        if hasattr(model, 'names') and model.names:
-            detected_num_classes = len(model.names)
-            # model.names is {0: 'class1', 1: 'class2', ...}
-            detected_class_names = [model.names[i] for i in range(detected_num_classes)]
-            logger.info(f"Auto-detected from model.names: {detected_num_classes} classes")
-            logger.info(f"Class names: {detected_class_names[:5]}{'...' if len(detected_class_names) > 5 else ''}")
-        
-        # Method 2: Try model.model.nc
-        elif hasattr(model, 'model') and hasattr(model.model, 'nc'):
-            detected_num_classes = model.model.nc
-            if hasattr(model.model, 'names') and model.model.names:
-                detected_class_names = [model.model.names[i] for i in range(detected_num_classes)]
-            logger.info(f"Auto-detected from model.model.nc: {detected_num_classes} classes")
-        
-        # Method 3: Try model.info()
-        else:
-            info = model.info()
-            if 'classes' in info:
-                detected_num_classes = info['classes']
-                logger.info(f"Auto-detected from model.info: {detected_num_classes} classes")
-    except Exception as e:
-        logger.warning(f"Could not auto-detect num_classes from model: {e}")
-        logger.info(f"Will use provided num_classes: {num_classes}")
-    
-    # Use detected values if available, otherwise use provided values
-    final_num_classes = detected_num_classes if detected_num_classes is not None else num_classes
-    final_class_names = detected_class_names if detected_class_names and not parsed_class_names else parsed_class_names
-    
-    if detected_num_classes is not None:
-        logger.info(f"Final num_classes: {final_num_classes} (auto-detected from model)")
-    else:
-        logger.info(f"Final num_classes: {final_num_classes} (from user input)")
-    
     # Standalone models: store in standalone_models directory (will create subdirectory after getting model_id)
     upload_dir = settings.DATASETS_ROOT / "standalone_models"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -2876,40 +2873,65 @@ async def upload_model(
     filename = f"{safe_name}_{timestamp}.pt"
     file_path = upload_dir / filename
     source_type = "standalone"
-    
-    # Save uploaded file (temporary location for standalone models)
+
+    # Save uploaded file (chunked, with a hard size cap to prevent DoS)
     try:
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        await save_upload_limited(file, file_path, settings.MAX_MODEL_UPLOAD_MB)
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to save uploaded model: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded model: {str(e)}")
-    
-    # Use provided model_type or try to infer from file
-    final_model_type = model_type
-    # Only infer if model_type is not provided or is empty
-    if not final_model_type:
-        # Try to infer model type from file (basic check)
+
+    # SECURITY (C-2): a .pt file is a pickle — loading it can execute
+    # arbitrary code. Inspect it in an isolated subprocess that forces
+    # weights-only loading instead of running YOLO() inside the API process.
+    # This also provides num_classes / class_names for auto-detection (the
+    # previous in-process auto-detect referenced file_path before it was
+    # defined and never actually ran).
+    try:
+        model_info = inspect_yolo_model(file_path)
+    except UnsafeModelError as e:
         try:
-            from ultralytics import YOLO
-            model = YOLO(str(file_path))
-            # Try to get model info
-            model_info = model.info(verbose=False)
-            # Infer from model name or architecture
-            if hasattr(model, 'model') and hasattr(model.model, 'yaml'):
-                yaml_path = model.model.yaml
-                if yaml_path and Path(yaml_path).exists():
-                    with open(yaml_path, 'r') as f:
-                        yaml_data = yaml.safe_load(f)
-                        arch = yaml_data.get('yaml_file', '').lower()
-                        if 'yolov8' in arch:
-                            final_model_type = 'yolov8n'  # Default to yolov8n if yolov8 detected
-                        elif 'yolov11' in arch:
-                            final_model_type = 'yolov11n'  # Default to yolov11n if yolov11 detected
-        except Exception as e:
-            logger.warning(f"Could not infer model type from file: {e}")
-            final_model_type = 'yolov8n'  # Default fallback
+            file_path.unlink()
+        except OSError:
+            pass
+        audit_event(
+            "model_upload_rejected",
+            result="rejected",
+            client_ip=client_ip_from_request(request),
+            model_name=model_name,
+            reason=str(e),
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    except subprocess.TimeoutExpired:
+        try:
+            file_path.unlink()
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail="Model inspection timed out; file rejected")
+
+    detected_num_classes = model_info.get("num_classes") if model_info else None
+    detected_class_names = model_info.get("class_names") if model_info else None
+    if detected_num_classes is not None:
+        logger.info(f"Auto-detected (sandboxed): {detected_num_classes} classes")
+        logger.info(f"Class names: {(detected_class_names or [])[:5]}{'...' if detected_class_names and len(detected_class_names) > 5 else ''}")
+
+    # Use detected values if available, otherwise use provided values
+    final_num_classes = detected_num_classes if detected_num_classes is not None else num_classes
+    final_class_names = detected_class_names if detected_class_names and not parsed_class_names else parsed_class_names
+
+    if detected_num_classes is not None:
+        logger.info(f"Final num_classes: {final_num_classes} (auto-detected from model)")
+    else:
+        logger.info(f"Final num_classes: {final_num_classes} (from user input)")
+
+    # Use provided model_type or infer from the sandbox inspection
+    final_model_type = model_type
+    if not final_model_type:
+        # Default classification for standalone uploads; the architecture
+        # string cannot be trusted from an untrusted file anyway.
+        final_model_type = 'yolov8n'
     # If user provided model_type, use it directly (don't override)
     
     # Store in ModelRegistry (use temporary path for standalone models)
@@ -2947,6 +2969,16 @@ async def upload_model(
         pass
     
     logger.info(f"Uploaded model: {model_name} (ID: {model_reg.id}, Path: {file_path}, Project: {project_id or 'None'})")
+
+    # SECURITY (M-7): audit model uploads (attack chain entry point)
+    audit_event(
+        "model_upload",
+        client_ip=client_ip_from_request(request),
+        model_id=model_reg.id,
+        model_name=model_name,
+        project_id=project_id,
+        size_bytes=file_path.stat().st_size,
+    )
 
     result = {
         "model_id": model_reg.id,
@@ -3145,12 +3177,12 @@ async def upload_calibration_images(
         if existing_file.is_file():
             existing_file.unlink()
 
-    # Save uploaded ZIP file
+    # Save uploaded ZIP file (chunked, with size cap)
     temp_zip_path = calib_dir / "temp_upload.zip"
     try:
-        content = await file.read()
-        with open(temp_zip_path, "wb") as f:
-            f.write(content)
+        await save_upload_limited(file, temp_zip_path, settings.MAX_CALIBRATION_UPLOAD_MB)
+    except ValueError as e:
+        raise HTTPException(status_code=413, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to save uploaded calibration images: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {str(e)}")
@@ -3161,7 +3193,6 @@ async def upload_calibration_images(
 
     try:
         with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
-            # First pass: validate the ZIP structure
             file_list = zip_ref.namelist()
             image_files = [f for f in file_list if f.lower().endswith(valid_extensions)]
 
@@ -3172,42 +3203,27 @@ async def upload_calibration_images(
                     detail="No valid images found in ZIP file. Supported formats: jpg, jpeg, png"
                 )
 
-            # Second pass: extract images
-            for file_info in zip_ref.infolist():
-                if file_info.is_dir():
-                    continue
+        # SECURITY (H-8): the previous code computed the extracted path from
+        # the raw entry name before a shutil.move, letting a crafted name
+        # move files outside the calibration directory. Extraction is now
+        # done by the hardened helper (Zip-Slip + zip-bomb protected,
+        # flattened into calib_dir).
+        extracted = extract_zip_safe(
+            temp_zip_path,
+            calib_dir,
+            allowed_extensions=valid_extensions,
+            flatten=True,
+        )
+        extracted_count = len(extracted)
 
-                file_name = file_info.filename
-                if not file_name.lower().endswith(valid_extensions):
-                    continue
-
-                # Extract to temporary location first to handle directory structure
-                zip_ref.extract(file_info, calib_dir)
-
-                # Find the extracted file and move to root of calib_dir if needed
-                extracted_path = calib_dir / file_name
-                if extracted_path.exists():
-                    # Create a clean filename
-                    base_name = Path(file_name).name
-                    # If filename has duplicates, add a suffix
-                    dest_name = base_name
-                    counter = 1
-                    while (calib_dir / dest_name).exists() and (calib_dir / dest_name) != extracted_path:
-                        stem = Path(base_name).stem
-                        ext = Path(base_name).suffix
-                        dest_name = f"{stem}_{counter}{ext}"
-                        counter += 1
-
-                    # Move to root of calib_dir
-                    final_path = calib_dir / dest_name
-                    if final_path != extracted_path:
-                        shutil.move(str(extracted_path), str(final_path))
-
-                    extracted_count += 1
-
+    except HTTPException:
+        raise
     except zipfile.BadZipFile:
         temp_zip_path.unlink()
         raise HTTPException(status_code=400, detail="Invalid ZIP file format")
+    except ValueError as e:
+        temp_zip_path.unlink()
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to extract calibration images: {e}", exc_info=True)
         temp_zip_path.unlink()
@@ -4245,7 +4261,7 @@ async def _test_tflite_model(
         import tensorflow as tf
         
         # Read uploaded image
-        image_bytes = await file.read()
+        image_bytes = await file.read(settings.MAX_IMAGE_SIZE_MB * 1024 * 1024 + 1)
         image = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
         
         # Load TFLite model first to get actual input shape
@@ -4726,7 +4742,7 @@ async def test_model_by_id(
         from ultralytics import YOLO
         
         # Read uploaded image
-        image_bytes = await file.read()
+        image_bytes = await file.read(settings.MAX_IMAGE_SIZE_MB * 1024 * 1024 + 1)
         image = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
         
         # Load model (YOLO supports PT and TFLite when environment is configured)
@@ -4922,11 +4938,19 @@ def get_mqtt_status(request: Request):
 @router.get("/system/mqtt/config", response_model=MQTTConfig)
 def get_mqtt_config():
     """Get current MQTT configuration (for system settings UI)."""
-    return mqtt_config_service.load_config()
+    cfg = mqtt_config_service.load_config()
+    data = cfg.model_dump() if hasattr(cfg, "model_dump") else cfg.dict()
+    # SECURITY (H-6): never echo stored passwords back to clients. The UI
+    # receives the PASSWORD_MASK sentinel and sends it back unchanged on
+    # save; update_mqtt_config keeps the stored value in that case.
+    for field in ("builtin_password", "external_password", "password"):
+        if data.get(field):
+            data[field] = PASSWORD_MASK
+    return data
 
 
 @router.put("/system/mqtt/config", response_model=MQTTConfig)
-def update_mqtt_config(update: MQTTConfigUpdate):
+def update_mqtt_config(update: MQTTConfigUpdate, request: Request):
     """
     Update MQTT configuration and apply it at runtime.
     
@@ -4965,6 +4989,15 @@ def update_mqtt_config(update: MQTTConfigUpdate):
 
     new_cfg = MQTTConfig(**data)
 
+    # SECURITY (H-6): a masked password returned by GET must not overwrite
+    # the stored secret — restore the real value for unchanged fields.
+    for field in ("builtin_password", "external_password", "password"):
+        setattr(
+            new_cfg,
+            field,
+            unmask_password(getattr(new_cfg, field, None), getattr(current, field, None)),
+        )
+
     # Basic validation and normalization
     if new_cfg.builtin_protocol not in ("mqtt", "mqtts"):
         raise HTTPException(status_code=400, detail="Invalid builtin_protocol, must be 'mqtt' or 'mqtts'")
@@ -4994,6 +5027,18 @@ def update_mqtt_config(update: MQTTConfigUpdate):
 
     # Persist configuration
     saved = mqtt_config_service.save_config(new_cfg)
+
+    # SECURITY (M-7): audit sensitive configuration changes
+    audit_event(
+        "mqtt_config_change",
+        client_ip=client_ip_from_request(request),
+        changes={
+            "allow_anonymous": {"before": current.builtin_allow_anonymous, "after": saved.builtin_allow_anonymous},
+            "tls_enabled": {"before": current.builtin_tls_enabled, "after": saved.builtin_tls_enabled},
+            "require_client_cert": {"before": current.builtin_tls_require_client_cert, "after": saved.builtin_tls_require_client_cert},
+            "enabled": {"before": current.enabled, "after": saved.enabled},
+        },
+    )
 
     # When using external Mosquitto instead of Python built-in broker,
     # enforce username/password requirement when anonymous access is disabled,
@@ -5684,9 +5729,12 @@ async def upload_mqtt_tls_file(
     if kind in {"server_key", "client_key"} and ext not in {".key", ".pem"}:
         raise HTTPException(status_code=400, detail="Key file must be .key or .pem")
 
-    content = await file.read()
+    # Cap PEM uploads at MAX_TLS_FILE_MB to prevent trivial memory DoS
+    content = await file.read(settings.MAX_TLS_FILE_MB * 1024 * 1024 + 1)
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(content) > settings.MAX_TLS_FILE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"TLS file too large (max {settings.MAX_TLS_FILE_MB} MB)")
 
     text = content.decode("utf-8", errors="ignore")
     # Basic PEM format checks
@@ -6101,9 +6149,12 @@ async def upload_external_broker_tls_file(
     if kind == "client_key" and ext not in {".key", ".pem"}:
         raise HTTPException(status_code=400, detail="Key file must be .key or .pem")
 
-    content = await file.read()
+    # Cap PEM uploads at MAX_TLS_FILE_MB to prevent trivial memory DoS
+    content = await file.read(settings.MAX_TLS_FILE_MB * 1024 * 1024 + 1)
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    if len(content) > settings.MAX_TLS_FILE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"TLS file too large (max {settings.MAX_TLS_FILE_MB} MB)")
 
     text = content.decode("utf-8", errors="ignore")
     # Basic PEM format checks
@@ -6162,8 +6213,9 @@ def download_mqtt_client_certificate():
 
 
 @router.get("/system/mqtt/tls/client-key")
-def download_mqtt_client_key():
+def download_mqtt_client_key(request: Request):
     """Download current client private key for mTLS (used by AIToolStack to connect to MQTTS)."""
+    audit_event("key_download", client_ip=client_ip_from_request(request), key="client.key")
     client_key_path = Path("/mosquitto/config/certs/client.key")
     if not client_key_path.exists():
         raise HTTPException(status_code=404, detail="Client key not found. Please upload a client key first.")
@@ -6193,8 +6245,9 @@ def download_device_client_certificate(common_name: str):
 
 
 @router.get("/system/mqtt/tls/device-key/{common_name}")
-def download_device_client_key(common_name: str):
+def download_device_client_key(common_name: str, request: Request):
     """Download client private key for a specific device (by CN)."""
+    audit_event("key_download", client_ip=client_ip_from_request(request), key=f"client-{common_name}.key")
     from urllib.parse import unquote
     safe_cn = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in unquote(common_name))
     client_key_path = Path(f"/mosquitto/config/certs/client-{safe_cn}.key")
@@ -6211,19 +6264,22 @@ def download_device_client_key(common_name: str):
 
 
 @router.get("/system/mqtt/tls/external/{kind}/{filename}")
-def download_external_broker_tls_file(kind: str, filename: str):
+def download_external_broker_tls_file(kind: str, filename: str, request: Request):
     """Download TLS files for external MQTT brokers.
-    
+
     Args:
         kind: 'ca', 'client-cert', or 'client-key'
         filename: Filename without extension (e.g., 'ca-1766456884' or 'client-cert-1766456884')
     """
     from urllib.parse import unquote
-    
+
     kind = kind.lower()
     if kind not in {"ca", "client-cert", "client-key"}:
         raise HTTPException(status_code=400, detail="Invalid kind, must be one of: ca, client-cert, client-key")
-    
+
+    if kind == "client-key":
+        audit_event("key_download", client_ip=client_ip_from_request(request), key=f"external:{filename}.key")
+
     safe_filename = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in unquote(filename))
     
     base_dir = Path("/mosquitto/config/certs/external")
@@ -6797,12 +6853,18 @@ def _remove_device_from_password_file(common_name: str):
 
 
 @router.delete("/system/mqtt/tls/device-certificate/{common_name}")
-def delete_device_certificate(common_name: str):
+def delete_device_certificate(common_name: str, request: Request):
     """Delete a device client certificate and key, and add it to CRL for immediate revocation."""
     from urllib.parse import unquote
     from pathlib import Path
     import subprocess
-    
+
+    audit_event(
+        "certificate_revoke",
+        client_ip=client_ip_from_request(request),
+        common_name=common_name,
+    )
+
     safe_cn = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in unquote(common_name))
     certs_dir = Path("/mosquitto/config/certs")
     
@@ -6880,25 +6942,45 @@ def delete_device_certificate(common_name: str):
 
 @router.post("/system/mqtt/tls/generate-client-cert")
 def generate_client_certificate(
+    request: Request,
     common_name: str = "mqtt-client",
-    days: int = 3650,
+    days: int = Query(3650, ge=1, le=7300, description="Validity period in days (max 20 years)"),
     for_aitoolstack: bool = True,
 ):
     """
     Generate a client certificate and key signed by the CA for mTLS.
-    
+
     Args:
         common_name: CN (Common Name) for the client certificate (default: "mqtt-client")
         days: Validity period in days (default: 3650, ~10 years)
         for_aitoolstack: If True, generates certificate for AIToolStack (saves to client.crt/client.key).
                         If False, generates certificate for external device (saves to client-{CN}.crt/client-{CN}.key).
-    
+
     Returns:
         Success message with paths to generated files
     """
     import subprocess
     from pathlib import Path
-    
+
+    # SECURITY (M-5): the CN is written into an openssl.cnf template below.
+    # Restrict it to a safe charset so newline/control characters cannot
+    # inject additional config sections (e.g. .include, [engine]).
+    try:
+        common_name = validate_common_name(common_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        audit_event(
+            "certificate_generate",
+            client_ip=client_ip_from_request(request),
+            common_name=common_name,
+            for_aitoolstack=for_aitoolstack,
+            days=days,
+        )
+    except Exception:
+        pass
+
     certs_dir = Path("/mosquitto/config/certs")
     certs_dir.mkdir(parents=True, exist_ok=True)
     
@@ -7420,7 +7502,16 @@ def test_external_broker_connection(broker: ExternalBrokerCreate):
     import ssl
     import paho.mqtt.client as mqtt
     import uuid
-    
+
+    # SECURITY (M-1): the host is attacker-controllable; reject malformed
+    # values and infrastructure-critical targets (metadata/link-local) before
+    # the server opens a socket to it. LAN ranges remain allowed on purpose:
+    # connecting to LAN brokers is a core feature of this product.
+    try:
+        validate_broker_host(broker.host)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     try:
         # First, test TCP connection
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -8030,6 +8121,7 @@ def list_device_reports(
 @router.delete("/devices/{device_id}")
 def delete_device(device_id: str, db: Session = Depends(get_db)):
     """Delete a device, all its reports, and associated certificate if exists."""
+    audit_event("device_delete", device_id=device_id)
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")

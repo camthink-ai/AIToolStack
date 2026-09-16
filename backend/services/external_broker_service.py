@@ -2,6 +2,7 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 from backend.models.database import SessionLocal, ExternalMQTTBroker
+from backend.utils.security_utils import PASSWORD_MASK, mask_password
 from backend.config import settings
 
 
@@ -85,7 +86,7 @@ class ExternalBrokerService:
                 host=broker.host,
                 port=broker.port,
                 username=broker.username,
-                password=broker.password,
+                password=mask_password(broker.password),
                 qos=broker.qos,
                 keepalive=broker.keepalive,
                 tls_enabled=broker.tls_enabled,
@@ -116,7 +117,7 @@ class ExternalBrokerService:
                 host=broker.host,
                 port=broker.port,
                 username=broker.username,
-                password=broker.password,
+                password=mask_password(broker.password),
                 qos=broker.qos,
                 keepalive=broker.keepalive,
                 tls_enabled=broker.tls_enabled,
@@ -143,7 +144,12 @@ class ExternalBrokerService:
                 host=broker_data.host,
                 port=broker_data.port,
                 username=broker_data.username,
-                password=broker_data.password,
+                # A masked value on create means "no real password supplied"
+                password=(
+                    None
+                    if broker_data.password == PASSWORD_MASK
+                    else broker_data.password
+                ),
                 qos=broker_data.qos,
                 keepalive=broker_data.keepalive,
                 tls_enabled=broker_data.tls_enabled,
@@ -165,7 +171,7 @@ class ExternalBrokerService:
                 host=broker.host,
                 port=broker.port,
                 username=broker.username,
-                password=broker.password,
+                password=mask_password(broker.password),
                 qos=broker.qos,
                 keepalive=broker.keepalive,
                 tls_enabled=broker.tls_enabled,
@@ -191,6 +197,10 @@ class ExternalBrokerService:
 
             # Update fields
             update_dict = broker_data.model_dump(exclude_unset=True, exclude_none=False)
+            # SECURITY: a masked password returned by GET must not overwrite
+            # the stored secret — keep the existing value in that case.
+            if update_dict.get("password") == PASSWORD_MASK:
+                update_dict["password"] = broker.password
             for field, value in update_dict.items():
                 if hasattr(broker, field):
                     setattr(broker, field, value)
@@ -209,7 +219,7 @@ class ExternalBrokerService:
                 host=broker.host,
                 port=broker.port,
                 username=broker.username,
-                password=broker.password,
+                password=mask_password(broker.password),
                 qos=broker.qos,
                 keepalive=broker.keepalive,
                 tls_enabled=broker.tls_enabled,
@@ -253,7 +263,7 @@ class ExternalBrokerService:
                 host=broker.host,
                 port=broker.port,
                 username=broker.username,
-                password=broker.password,
+                password=mask_password(broker.password),
                 qos=broker.qos,
                 keepalive=broker.keepalive,
                 tls_enabled=broker.tls_enabled,
