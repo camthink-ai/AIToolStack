@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ToolType, Annotation, ImageInfo, Class } from './AnnotationWorkbench';
 import { API_BASE_URL } from '../config';
+import { withApiAuth } from '../apiAuth';
 import { IoWarning } from 'react-icons/io5';
 import './AnnotationCanvas.css';
 import { Alert } from '../ui/Alert';
@@ -150,9 +151,9 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
           imagePath = imagePath.substring(rawIndex);
         }
       }
-      const imageUrl = image.path.startsWith('http') 
+      const imageUrl = withApiAuth(image.path.startsWith('http') 
         ? image.path 
-        : `${API_BASE_URL.replace('/api', '')}/images/${projectId}/${imagePath}`;
+        : `${API_BASE_URL.replace('/api', '')}/images/${projectId}/${imagePath}`);
       setImageError(`Image load failed: ${imageUrl}`);
     };
     
@@ -171,9 +172,9 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
     }
     // API_BASE_URL is already http://localhost:8000/api
     // Image service path is /api/images/{project_id}/{image_path}
-    const imageUrl = image.path.startsWith('http') 
+    const imageUrl = withApiAuth(image.path.startsWith('http') 
       ? image.path 
-      : `${API_BASE_URL}/images/${projectId}/${imagePath}`;
+      : `${API_BASE_URL}/images/${projectId}/${imagePath}`);
     
     console.log('[Canvas] Loading image:', imageUrl);
     img.src = imageUrl;
@@ -1324,9 +1325,9 @@ export const AnnotationCanvas: React.FC<AnnotationCanvasProps> = ({
                     imagePath = imagePath.substring(rawIndex);
                   }
                 }
-                const imageUrl = image.path.startsWith('http') 
+                const imageUrl = withApiAuth(image.path.startsWith('http') 
                   ? image.path 
-                  : `${API_BASE_URL.replace('/api', '')}/images/${projectId}/${imagePath}`;
+                  : `${API_BASE_URL.replace('/api', '')}/images/${projectId}/${imagePath}`);
                 img.onload = () => {
                   imageRef.current = img;
                   setImageLoading(false);

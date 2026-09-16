@@ -112,6 +112,53 @@ cd backend   && pip install -r requirements.txt && uvicorn main:app --reload
 
 ---
 
+## Security Configuration
+
+### API Authentication (recommended in production)
+
+By default the API is open (no login) for easy local/edge use. To require an access key on every
+`/api` and `/ws` request:
+
+```bash
+# 1. Generate a key
+openssl rand -hex 32
+
+# 2. Put it in the .env file next to docker-compose.yml
+echo "API_KEY=<the-generated-key>" >> .env
+
+# 3. Uncomment API_AUTH_ENABLED / API_KEY in docker-compose.yml and restart
+docker compose up -d
+```
+
+The web UI shows an access-key prompt on first use and remembers the key in the browser.
+`<img>` tags and WebSocket connections pass the key via the `api_key` query parameter.
+`/health` and the static frontend stay public.
+
+| Variable | Default | Description |
+|---|---|---|
+| `API_AUTH_ENABLED` | `false` | Require an API key on every `/api` and `/ws` request |
+| `API_KEY` | (empty) | Access key(s), comma-separated to grant several clients |
+| `CORS_ORIGINS` | localhost dev origins | Comma-separated browser origins allowed by CORS |
+| `RATE_LIMIT_PER_MINUTE` | `600` | Per-IP request limit on `/api` endpoints (0 = off) |
+
+### Other secure defaults
+
+- `DEBUG` defaults to `false`: `/docs` and `/openapi.json` are hidden and error responses no longer
+  echo internal details.
+- The built-in Mosquitto broker rejects anonymous connections by default
+  (`builtin_allow_anonymous=false`) — configure a username/password for your devices in
+  System Settings.
+- Uploaded `.pt` models are inspected in an isolated subprocess with weights-only pickle loading;
+  files that cannot be loaded safely are rejected.
+- ZIP uploads are protected against Zip-Slip and zip bombs; uploads have size limits.
+- Sensitive operations (config changes, certificate/key operations, model uploads, device deletion)
+  are recorded to `data/audit.log`.
+- `NE301_AUTO_UPDATE` defaults to `false`: update the NE301 project deliberately instead of
+  auto-pulling external code at every startup.
+
+> Even with these fixes, keep ports 8000/1883/8883 off the public internet (firewall, reverse proxy,
+> VLAN segmentation). The backend container still mounts `docker.sock` for NE301 compilation.
+
 ## Roadmap
 
 - 🚀 **Auto Annotation**: Auto annotation backend/frontend development has started, implementing model labeled inference + manual review closed-loop

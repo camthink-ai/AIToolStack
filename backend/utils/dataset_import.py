@@ -317,10 +317,10 @@ class YOLOImporter:
         
         temp_dir = Path(tempfile.mkdtemp())
         try:
-            # Extract ZIP
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)
-            
+            # Zip-Slip + zip-bomb protected extraction
+            from backend.utils.security_utils import extract_zip_safe
+            extract_zip_safe(zip_path, temp_dir)
+
             # Find dataset root (might be in a subdirectory)
             dataset_root = temp_dir
             if len(list(temp_dir.iterdir())) == 1:

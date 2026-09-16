@@ -11,6 +11,7 @@ import { DatasetImportModal } from './DatasetImportModal';
 import { DataSourceManager } from './DataSourceManager';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { API_BASE_URL } from '../config';
+import { withApiAuth } from '../apiAuth';
 import { IoArrowBack, IoDownload, IoChevronDown, IoCloudUpload, IoRocket, IoLink } from 'react-icons/io5';
 import './AnnotationWorkbench.css';
 import { Button } from '../ui/Button';
@@ -477,9 +478,9 @@ export const AnnotationWorkbench: React.FC<AnnotationWorkbenchProps> = ({
           imagePath = imagePath.substring(rawIndex);
         }
       }
-      const imageUrl = imgInfo.path.startsWith('http')
+      const imageUrl = withApiAuth(imgInfo.path.startsWith('http')
         ? imgInfo.path
-        : `${API_BASE_URL}/images/${project.id}/${imagePath}`;
+        : `${API_BASE_URL}/images/${project.id}/${imagePath}`);
 
       const img = new Image();
       img.src = imageUrl;

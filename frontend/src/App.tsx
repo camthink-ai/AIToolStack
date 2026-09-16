@@ -7,6 +7,7 @@ import { TrainingPanel } from './components/TrainingPanel';
 import { SystemSettings } from './components/SystemSettings';
 import { DeviceManager } from './components/DeviceManager';
 import { API_BASE_URL } from './config';
+import { ApiAuthGate } from './components/ApiAuthGate';
 import './App.css';
 
 interface Project {
@@ -201,6 +202,7 @@ function App() {
 
   return (
     <div className="app">
+      <ApiAuthGate />
       <TopNavigation activeMenu={activeMenu} onMenuChange={handleMenuChange} />
       <div 
         className="app-content" 
