@@ -2,7 +2,9 @@
 import logging
 import threading
 import io
+import os
 import sys
+import time
 import shutil
 import yaml
 import json
@@ -32,6 +34,93 @@ logger = logging.getLogger(__name__)
 # Database
 from backend.models.database import SessionLocal, TrainingRecord, TrainingLog
 from backend.config import settings
+
+
+class TrainingStallMonitor:
+    def __init__(self, log_fn, on_stall_stop, base_timeout=120.0, max_stalls=3,
+                 slow_ratio=5.0, warmup_ratio=5.0, slow_warn_seconds=60.0, time_fn=None):
+        self.log_fn = log_fn
+        self.on_stall_stop = on_stall_stop
+        self.base_timeout = base_timeout
+        self.max_stalls = max_stalls
+        self.slow_ratio = slow_ratio
+        self.warmup_ratio = warmup_ratio
+        self.slow_warn_seconds = slow_warn_seconds
+        self.time_fn = time_fn or time.monotonic
+        self.batches_done = 0
+        self.stall_count = 0
+        self.stopped_by_stall = False
+        self.last_completion = None
+        self.last_duration = 0.0
+        self.strike_base = None
+        self._done = threading.Event()
+        self._thread = None
+        self._suspended_fn = lambda: False
+
+    @property
+    def watchdog_alive(self):
+        return self._thread is not None and self._thread.is_alive()
+
+    def timeout(self):
+        if self.batches_done < 2:
+            return self.base_timeout * self.warmup_ratio
+        return max(self.base_timeout, self.slow_ratio * self.last_duration)
+
+    def record_batch(self):
+        now = self.time_fn()
+        if self.last_completion is not None:
+            self.last_duration = now - self.last_completion
+            if self.last_duration >= self.slow_warn_seconds:
+                self.log_fn(f"WARNING: Slow training: batch {self.batches_done} took {self.last_duration:.0f}s")
+        self.batches_done += 1
+        self.last_completion = now
+        self.strike_base = now
+        self.stall_count = 0
+
+    def check(self, suspended=False):
+        now = self.time_fn()
+        if suspended:
+            self.strike_base = now
+            return
+        if self.strike_base is None or self.stopped_by_stall:
+            return
+        if now - self.strike_base < self.timeout():
+            return
+        self.strike_base = now
+        self.stall_count += 1
+        self.log_fn(
+            f"WARNING: No batch completed for {now - self.last_completion:.0f}s "
+            f"(stall #{self.stall_count}/{self.max_stalls}, last: batch {self.batches_done - 1})")
+        if self.stall_count >= self.max_stalls:
+            self.stopped_by_stall = True
+            self.log_fn("CRITICAL: No batch progress after repeated stalls, attempting graceful stop")
+            self.on_stall_stop()
+
+    def reset(self):
+        self.batches_done = 0
+        self.stall_count = 0
+        self.stopped_by_stall = False
+        self.last_completion = None
+        self.last_duration = 0.0
+        self.strike_base = None
+
+    def start_watchdog(self, check_interval=5.0, suspended_fn=None):
+        if suspended_fn is not None:
+            self._suspended_fn = suspended_fn
+        self._done.clear()
+        self._thread = threading.Thread(target=self._watch, args=(check_interval,),
+                                        daemon=True, name="TrainingStallWatchdog")
+        self._thread.start()
+
+    def stop_watchdog(self):
+        self._done.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+    def _watch(self, check_interval):
+        while not self._done.wait(check_interval):
+            self.check(suspended=self._suspended_fn())
 
 
 def _setup_pytorch_compatibility():
@@ -526,8 +615,6 @@ class TrainingService:
         """
         print(f"[TrainingThread-{training_id}] Thread started, beginning training process")
 
-        # Small delay to allow main thread to return response before heavy operations
-        import time
         time.sleep(0.1)
 
         record_for_db = None
@@ -639,22 +726,16 @@ class TrainingService:
                             ) from e
                         raise
                 
-                # Auto-optimize workers for CPU training if not specified
                 if workers is None:
-                    import os
                     cpu_count = os.cpu_count() or 8
 
-                    # CPU-optimized: use fewer workers to avoid resource exhaustion
                     if device and 'cuda' in str(device).lower():
-                        # GPU training: can use more workers since GPU does compute
                         workers = min(cpu_count, 8)
                         self._add_log(training_id, project_id,
                             f"GPU training: configured {workers} workers (cores: {cpu_count})")
                     else:
-                        # CPU training: use 50-75% of cores for workers (leave room for compute)
-                        workers = max(2, min(cpu_count // 2, 6))
                         self._add_log(training_id, project_id,
-                            f"CPU training: configured {workers} workers (cores: {cpu_count})")
+                            "CPU training: dataloader workers managed by ultralytics (0 on CPU)")
 
                 # Prepare training parameters (following ultralytics documentation)
                 # Use training_id to generate unique training directory name, avoid overwriting multiple trainings
@@ -688,6 +769,12 @@ class TrainingService:
                     self._add_log(training_id, project_id, "Early stopping patience: 100 (default)")
                 if workers is not None:
                     train_args['workers'] = workers
+                    if hasattr(model, "add_callback") and (not device or 'cpu' in str(device).lower()):
+                        def _restore_cpu_workers(trainer):
+                            trainer.args.workers = workers
+                        model.add_callback("on_pretrain_routine_start", _restore_cpu_workers)
+                        self._add_log(training_id, project_id,
+                            f"CPU training: preserving explicit {workers} dataloader workers")
                 if val is not None:
                     train_args['val'] = val
                     self._add_log(training_id, project_id, f"Validation: {'enabled' if val else 'disabled'}")
@@ -801,60 +888,35 @@ class TrainingService:
                         # Best-effort: if callback registration fails, continue without pause support
                         pass
 
-                # Progress monitoring for CPU training - detect and recover from stalls
+                monitor = None
+                trainer_ref = {}
+
+                def _request_stall_stop():
+                    trainer = trainer_ref.get('obj')
+                    if trainer is not None:
+                        trainer.stop = True
+                        trainer.stop_training = True
+
                 if hasattr(model, "add_callback"):
-                    import time
-                    progress_state = {
-                        'last_batch': 0,
-                        'last_update_time': None,
-                        'stall_count': 0,
-                        'max_stalls': 3,  # Auto-retry up to 3 times
-                        'stall_timeout': 120,  # 2 minutes without progress = stalled
-                    }
+                    monitor = TrainingStallMonitor(
+                        log_fn=lambda message: self._add_log(training_id, project_id, message),
+                        on_stall_stop=_request_stall_stop,
+                    )
 
-                    def _monitor_progress(trainer):
-                        current_batch = getattr(trainer, 'batch', 0)
-                        current_time = time.time()
-
-                        # Initialize on first call
-                        if progress_state['last_update_time'] is None:
-                            progress_state['last_update_time'] = current_time
-                            progress_state['last_batch'] = current_batch
-                            return
-
-                        # Check if we've made progress
-                        if current_batch > progress_state['last_batch']:
-                            # Progress made - reset stall tracking
-                            progress_state['last_batch'] = current_batch
-                            progress_state['last_update_time'] = current_time
-                            progress_state['stall_count'] = 0
-                        else:
-                            # No progress - check if stalled
-                            elapsed = current_time - progress_state['last_update_time']
-                            if elapsed > progress_state['stall_timeout']:
-                                progress_state['stall_count'] += 1
-                                self._add_log(training_id, project_id,
-                                    f"WARNING: Training stalled for {elapsed:.0f}s at batch {current_batch} "
-                                    f"(stall #{progress_state['stall_count']}/{progress_state['max_stalls']})")
-
-                                if progress_state['stall_count'] >= progress_state['max_stalls']:
-                                    self._add_log(training_id, project_id,
-                                        "CRITICAL: Training stalled multiple times, attempting graceful stop...")
-                                    # Trigger stop to allow retry logic
-                                    setattr(trainer, "stop", True)
-                                    setattr(trainer, "stop_training", True)
-
-                                progress_state['last_update_time'] = current_time
+                    def _capture_and_record(trainer):
+                        trainer_ref['obj'] = trainer
+                        monitor.record_batch()
 
                     try:
-                        model.add_callback("on_train_batch_end", _monitor_progress)
+                        model.add_callback("on_train_batch_end", _capture_and_record)
+                        monitor.start_watchdog(
+                            suspended_fn=lambda: self.paused_states.get(training_id, False))
                     except Exception:
-                        # Best-effort: if callback registration fails, continue without monitoring
-                        pass
+                        monitor.stop_watchdog()
+                        monitor = None
 
                 # Log training mode clearly
                 if not device or 'cpu' in str(device).lower():
-                    import os
                     self._add_log(training_id, project_id,
                         f"Training mode: CPU ONLY ({os.cpu_count() or 8} cores detected)")
                     self._add_log(training_id, project_id,
@@ -896,50 +958,54 @@ class TrainingService:
                 # verbose=True ensures detailed training information output
                 train_args['verbose'] = True
 
-                # Auto-retry wrapper for CPU training (handles stalls)
                 is_cpu_training = not device or 'cpu' in str(device).lower()
-                max_retries = 2 if is_cpu_training else 0  # Only retry for CPU
+                max_retries = 2 if is_cpu_training else 0
 
-                for attempt in range(max_retries + 1):
-                    try:
-                        if attempt > 0:
-                            # Reset progress state for retry
-                            if 'progress_state' in locals():
-                                progress_state['stall_count'] = 0
-                                progress_state['last_update_time'] = None
-                            self._add_log(training_id, project_id,
-                                f"Retrying training (attempt {attempt + 1}/{max_retries + 1})...")
-                            import time
-                            time.sleep(5)  # Brief pause before retry
-
-                        results = model.train(**train_args)
-
-                        # Post-training diagnostics
-                        self._add_log(training_id, project_id, "=== Training Completed ===")
+                try:
+                    for attempt in range(max_retries + 1):
                         try:
-                            if hasattr(results, 'results_dict'):
-                                metrics = results.results_dict
-                                self._add_log(training_id, project_id, f"Final Fitness: {metrics.get('metrics/fitness(B)', 'N/A')}")
-                                self._add_log(training_id, project_id, f"Final mAP50: {metrics.get('metrics/mAP50(B)', 'N/A')}")
-                            if hasattr(results, 'epochs'):
-                                self._add_log(training_id, project_id, f"Epochs Run: {results.epochs}")
+                            if attempt > 0:
+                                if monitor is not None:
+                                    monitor.reset()
+                                self._add_log(training_id, project_id,
+                                    f"Retrying training (attempt {attempt + 1}/{max_retries + 1})...")
+                                time.sleep(5)
+
+                            results = model.train(**train_args)
+
+                            if monitor is not None and monitor.stopped_by_stall:
+                                if attempt < max_retries:
+                                    self._add_log(training_id, project_id,
+                                        f"Training stalled on attempt {attempt + 1}, retrying...")
+                                    continue
+                                break
+
+                            self._add_log(training_id, project_id, "=== Training Completed ===")
+                            try:
+                                if hasattr(results, 'results_dict'):
+                                    metrics = results.results_dict
+                                    self._add_log(training_id, project_id, f"Final Fitness: {metrics.get('metrics/fitness(B)', 'N/A')}")
+                                    self._add_log(training_id, project_id, f"Final mAP50: {metrics.get('metrics/mAP50(B)', 'N/A')}")
+                                if hasattr(results, 'epochs'):
+                                    self._add_log(training_id, project_id, f"Epochs Run: {results.epochs}")
+                            except Exception as e:
+                                self._add_log(training_id, project_id, f"Warning: Could not extract diagnostics: {e}")
+                            self._add_log(training_id, project_id, "=============================")
+
+                            break
+
                         except Exception as e:
-                            self._add_log(training_id, project_id, f"Warning: Could not extract diagnostics: {e}")
-                        self._add_log(training_id, project_id, "=============================")
+                            if attempt < max_retries:
+                                self._add_log(training_id, project_id,
+                                    f"Training attempt {attempt + 1} failed: {str(e)}")
+                            else:
+                                raise
+                finally:
+                    if monitor is not None:
+                        monitor.stop_watchdog()
 
-                        # If successful, break out of retry loop
-                        break
-
-                    except Exception as e:
-                        if attempt < max_retries:
-                            self._add_log(training_id, project_id,
-                                f"Training attempt {attempt + 1} failed: {str(e)}")
-                        else:
-                            # Re-raise on final attempt
-                            raise
-
-                # Mark if stop was requested after training exits
-                stop_requested = stop_event.is_set() if stop_event else False
+                stall_stopped = monitor is not None and monitor.stopped_by_stall
+                stop_requested = stall_stopped or (stop_event.is_set() if stop_event else False)
                 
             # Training completed (normal or stopped)
             training_success = True
@@ -954,7 +1020,7 @@ class TrainingService:
                             if stop_requested:
                                 record['status'] = 'stopped'
                                 record['end_time'] = datetime.now().isoformat()
-                                record['error'] = None
+                                record['error'] = 'auto-stopped: repeated batch stalls' if stall_stopped else None
                                 record_for_db = record
                             else:
                                 record['status'] = 'completed'
@@ -990,7 +1056,8 @@ class TrainingService:
                 try:
                     self._persist_record(record_for_db)
                     if stop_requested:
-                        self._add_log(training_id, project_id, "Training stopped by user")
+                        outcome = "Training auto-stopped: no batch progress" if stall_stopped else "Training stopped by user"
+                        self._add_log(training_id, project_id, outcome)
                         logger.info(f"[Training] Training stopped for project {project_id}, training_id: {training_id}")
                     else:
                         self._add_log(training_id, project_id, "Training completed!")
