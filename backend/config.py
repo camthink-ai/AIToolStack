@@ -573,6 +573,8 @@ class Settings(BaseSettings):
     NE301_UPDATE_TIMEOUT: int = 30  # Update operation timeout (seconds)
     NE301_UPDATE_STASH_CHANGES: bool = False  # Whether to auto-stash local changes
 
+    CONTAINER_NAME: str = "camthink-aitoolstack"
+
     class Config:
         env_file = ".env"
         case_sensitive = True
@@ -585,6 +587,8 @@ if not settings.MQTT_BROKER:
     settings.MQTT_BROKER = get_local_ip()
 
 # Ensure necessary directories exist
+if not Path("/.dockerenv").exists() and settings.DATASETS_ROOT == Path("/app/datasets"):
+    settings.DATASETS_ROOT = DATASETS_DIR
 settings.DATASETS_ROOT.mkdir(parents=True, exist_ok=True)
 (BASE_DIR / "data").mkdir(parents=True, exist_ok=True)
 
